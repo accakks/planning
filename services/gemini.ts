@@ -1,12 +1,25 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
+import { supabase } from './supabase';
 import { Category, Task, ThemeStyle, UserProfile, Theme } from '../types';
 
-// We initialize this lazily or per call to ensure we get the key from process.env if set later
-const getAiClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Helper to call the Edge Function
+const callGeminiProxy = async (params: any) => {
+  // Force stable model
+  params.model = 'gemini-1.5-flash';
+
+  const { data, error } = await supabase.functions.invoke('gemini-proxy', {
+    body: params,
+  });
+
+  if (error) {
+    console.error("Gemini Proxy Error:", error);
+    throw new Error(error.message || "Failed to contact AI service");
+  }
+
+  return data;
+};
 
 export const generateSubtasks = async (goal: string): Promise<Partial<Task>[]> => {
-  const ai = getAiClient();
-  
   const prompt = `
     I am a woman in my late 20s planning for a successful 2026. 
     I have a big goal: "${goal}".
@@ -17,9 +30,8 @@ export const generateSubtasks = async (goal: string): Promise<Partial<Task>[]> =
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
+    const response = await callGeminiProxy({
+      prompt: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -52,15 +64,13 @@ export const generateSubtasks = async (goal: string): Promise<Partial<Task>[]> =
 };
 
 export const getMotivationalQuote = async (themeContext?: string): Promise<string> => {
-  const ai = getAiClient();
   try {
     const prompt = themeContext 
       ? `Give me a short, punchy motivational quote for a woman in her specific era: "${themeContext}". Max 15 words.`
       : "Give me one short, punchy, energetic motivational quote for a woman about to turn 29 and crush her goals. Max 15 words.";
       
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
+    const response = await callGeminiProxy({
+      prompt: prompt,
     });
     return response.text || "Make it happen!";
   } catch (e) {
@@ -69,7 +79,6 @@ export const getMotivationalQuote = async (themeContext?: string): Promise<strin
 };
 
 export const generateThemeStyle = async (description: string): Promise<ThemeStyle> => {
-  const ai = getAiClient();
   const prompt = `
     Based on this theme description: "${description}", suggest a Tailwind CSS color palette that matches the mood.
     Return JSON with fields:
@@ -86,9 +95,8 @@ export const generateThemeStyle = async (description: string): Promise<ThemeStyl
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
+    const response = await callGeminiProxy({
+      prompt: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -177,18 +185,19 @@ export const chatWithCopilot = async (
   currentTheme: Theme,
   tasks: Task[]
 ) => {
-  const ai = getAiClient();
   const systemInstruction = getCopilotSystemInstruction(user, currentTheme, tasks);
 
-  const chat = ai.chats.create({
-    model: 'gemini-3-flash-preview',
+  // Filter history to remove any empty parts if necessary, though simpler is better
+  const cleanHistory = history.map(h => ({ role: h.role, parts: h.parts }));
+
+  const response = await callGeminiProxy({
+    prompt: message,
+    history: cleanHistory,
+    systemInstruction: systemInstruction,
     config: {
-      systemInstruction: systemInstruction,
-      temperature: 0.8, // Slightly creative
-    },
-    history: history.map(h => ({ role: h.role, parts: h.parts }))
+        temperature: 0.8,
+    }
   });
 
-  const result = await chat.sendMessage({ message });
-  return result.text;
+  return response.text;
 };
