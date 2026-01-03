@@ -5,10 +5,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
-<<<<<<< HEAD
-=======
-      base: '/planning/', // This makes it work on https://accakks.github.io/planning/
->>>>>>> ca8bf0d (correct endpoint)
+      // NOTE: Ensure this matches your GitHub repo name (e.g., '/planning/' or '/planning-app/')
+      base: '/planning/', 
       server: {
         port: 3000,
         host: '0.0.0.0',
@@ -24,8 +22,4 @@ export default defineConfig(({ mode }) => {
         }
       }
     };
-<<<<<<< HEAD
 });
-=======
-});
->>>>>>> ca8bf0d (correct endpoint)
