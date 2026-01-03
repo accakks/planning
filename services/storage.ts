@@ -1,6 +1,7 @@
 import { Task, UserProfile, Theme, Story } from '../types';
 import { supabase } from './supabase';
 
+// Helper to get the current authenticated user's ID
 const getCurrentUserId = async () => {
   const { data: { user } } = await supabase.auth.getUser();
   return user?.id;
@@ -9,11 +10,12 @@ const getCurrentUserId = async () => {
 export const saveUser = async (user: UserProfile): Promise<void> => {
   const userId = user.id || await getCurrentUserId();
   if (userId) {
-     await supabase.from('profiles').upsert({
+     const { error } = await supabase.from('profiles').upsert({
          id: userId,
          email: user.email,
          name: user.name
      });
+     if (error) console.error('Error saving user profile:', error);
   }
 };
 
@@ -32,10 +34,17 @@ export const logoutUser = async (): Promise<void> => {
   await supabase.auth.signOut();
 };
 
-export const getTasks = async (email: string): Promise<Task[]> => {
+export const getTasks = async (email?: string): Promise<Task[]> => {
+  const userId = await getCurrentUserId();
+  if (!userId) {
+    console.warn('getTasks: No authenticated user found');
+    return [];
+  }
+
   const { data, error } = await supabase
     .from('tasks')
-    .select('*');
+    .select('*')
+    .eq('user_id', userId); // Explicitly filter by user_id
     
   if (error) {
     console.error('Error fetching tasks:', error);
@@ -56,11 +65,14 @@ export const getTasks = async (email: string): Promise<Task[]> => {
   }));
 };
 
-export const saveTasks = async (email: string, tasks: Task[]): Promise<void> => {
+export const saveTasks = async (email: string, tasks: Task[]): Promise<boolean> => {
   const userId = await getCurrentUserId();
-  if (!userId) return;
+  if (!userId) {
+    console.error('saveTasks: No user ID found');
+    return false;
+  }
 
-  if (tasks.length === 0) return;
+  if (tasks.length === 0) return true;
 
   const dbTasks = tasks.map(t => ({
     id: t.id,
@@ -77,13 +89,22 @@ export const saveTasks = async (email: string, tasks: Task[]): Promise<void> => 
   }));
 
   const { error } = await supabase.from('tasks').upsert(dbTasks);
-  if (error) console.error('Error saving tasks:', error);
+  
+  if (error) {
+    console.error('Error saving tasks:', error);
+    return false;
+  }
+  return true;
 };
 
-export const getThemes = async (email: string): Promise<Theme[]> => {
+export const getThemes = async (email?: string): Promise<Theme[]> => {
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
   const { data, error } = await supabase
     .from('themes')
-    .select('*');
+    .select('*')
+    .eq('user_id', userId);
     
   if (error) {
     console.error('Error fetching themes:', error);
@@ -101,11 +122,11 @@ export const getThemes = async (email: string): Promise<Theme[]> => {
   }));
 };
 
-export const saveThemes = async (email: string, themes: Theme[]): Promise<void> => {
+export const saveThemes = async (email: string, themes: Theme[]): Promise<boolean> => {
   const userId = await getCurrentUserId();
-  if (!userId) return;
+  if (!userId) return false;
 
-  if (themes.length === 0) return;
+  if (themes.length === 0) return true;
 
   const dbThemes = themes.map(t => ({
     id: t.id,
@@ -119,13 +140,21 @@ export const saveThemes = async (email: string, themes: Theme[]): Promise<void> 
   }));
 
   const { error } = await supabase.from('themes').upsert(dbThemes);
-  if (error) console.error('Error saving themes:', error);
+  if (error) {
+    console.error('Error saving themes:', error);
+    return false;
+  }
+  return true;
 };
 
-export const getStories = async (email: string): Promise<Story[]> => {
+export const getStories = async (email?: string): Promise<Story[]> => {
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
   const { data, error } = await supabase
     .from('stories')
-    .select('*');
+    .select('*')
+    .eq('user_id', userId);
     
   if (error) {
     console.error('Error fetching stories:', error);
@@ -141,11 +170,11 @@ export const getStories = async (email: string): Promise<Story[]> => {
   }));
 };
 
-export const saveStories = async (email: string, stories: Story[]): Promise<void> => {
+export const saveStories = async (email: string, stories: Story[]): Promise<boolean> => {
   const userId = await getCurrentUserId();
-  if (!userId) return;
+  if (!userId) return false;
 
-  if (stories.length === 0) return;
+  if (stories.length === 0) return true;
 
   const dbStories = stories.map(s => ({
     id: s.id,
@@ -157,7 +186,11 @@ export const saveStories = async (email: string, stories: Story[]): Promise<void
   }));
 
   const { error } = await supabase.from('stories').upsert(dbStories);
-  if (error) console.error('Error saving stories:', error);
+  if (error) {
+    console.error('Error saving stories:', error);
+    return false;
+  }
+  return true;
 };
 
 export const deleteTask = async (taskId: string) => {

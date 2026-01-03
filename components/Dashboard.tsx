@@ -76,8 +76,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [isGeneratingTasks, setIsGeneratingTasks] = useState(false);
 
   // Load Data
-  useEffect(() => {
-    const loadData = async () => {
+  const loadData = async () => {
+    setLoading(true);
+    try {
       const [loadedTasks, loadedThemes, loadedStories] = await Promise.all([
         getTasks(user.email),
         getThemes(user.email),
@@ -115,11 +116,35 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
               setCurrentThemeId(activeTheme.id);
           }
       }
-
+    } catch (e) {
+      console.error("Failed to load data", e);
+    } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+
+    // Refetch when window regains focus to ensure multi-device sync
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadData();
+      }
+    };
+    
+    // Also refetch on focus
+    const handleFocus = () => {
+      loadData();
     };
 
-    loadData();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [user.email]);
 
 
@@ -270,6 +295,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     };
     setTasks(prev => [task, ...prev]);
     await saveTasks(user.email, [task]);
+    // Optionally reload to confirm sync
+    // loadData();
   };
 
   const handleManualTaskSubmit = async (e: React.FormEvent) => {

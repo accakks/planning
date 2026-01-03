@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,42 +18,55 @@ serve(async (req) => {
       throw new Error('Missing GEMINI_API_KEY environment variable');
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    
-    // Explicitly using gemini-1.5-flash as it's the current standard and widely supported
-    const modelName = 'gemini-1.5-flash';
-    
-    const generativeModel = genAI.getGenerativeModel({ 
-        model: modelName,
-        systemInstruction: systemInstruction
-    });
-    
-    let text = '';
+    // Default to gemini-1.5-flash if not provided. 
+    // The user's curl used gemini-2.0-flash, so we can support that too if passed.
+    const modelName = model || 'gemini-1.5-flash';
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+    // Construct the payload for the REST API
+    let contents = [];
     
     if (history && history.length > 0) {
-        // Chat Mode
-        const chat = generativeModel.startChat({
-            history: history,
-            generationConfig: config
-        });
-        const result = await chat.sendMessage(prompt);
-        text = result.response.text();
+        // Convert history format if needed, or assume it matches Google's structure
+        contents = [...history];
+        // Add the new prompt
+        contents.push({ role: 'user', parts: [{ text: prompt }] });
     } else {
-        // Single Generate Mode
-        const result = await generativeModel.generateContent({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: config
-        });
-        text = result.response.text();
+        contents = [{ role: 'user', parts: [{ text: prompt }] }];
     }
 
-    const data = {
-      text: text,
+    const payload: any = {
+        contents: contents,
+        generationConfig: config || {}
     };
 
-    return new Response(JSON.stringify(data), {
+    if (systemInstruction) {
+        payload.systemInstruction = { parts: [{ text: systemInstruction }] };
+    }
+
+    // Call Google API directly
+    const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Google API Error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    
+    // Extract text from the response structure
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+    return new Response(JSON.stringify({ text }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
+
   } catch (error) {
     console.error("Error in gemini-proxy:", error);
     return new Response(JSON.stringify({ 
