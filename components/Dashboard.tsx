@@ -9,6 +9,8 @@ import FocusMode from './FocusMode';
 import YearRoadmap from './YearRoadmap';
 import Copilot from './Copilot';
 
+import DebugOverlay from './DebugOverlay';
+
 interface DashboardProps {
   user: UserProfile;
   onLogout: () => void;
@@ -74,10 +76,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
   const [aiPrompt, setAiPrompt] = useState('');
   const [isGeneratingTasks, setIsGeneratingTasks] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   // Load Data
   const loadData = async () => {
     setLoading(true);
+    setLastError(null);
     try {
       const [loadedTasks, loadedThemes, loadedStories] = await Promise.all([
         getTasks(user.email),
@@ -116,8 +120,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
               setCurrentThemeId(activeTheme.id);
           }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to load data", e);
+      setLastError(e.message || "Unknown error loading data");
     } finally {
       setLoading(false);
     }
@@ -551,6 +556,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         onAddTasks={handleCopilotAddTasks}
         onAddTheme={handleCopilotAddTheme}
       />
+      {/* Debug Overlay */}
+      <DebugOverlay user={user} lastError={lastError} onRefresh={loadData} />
 
       {/* Header */}
       <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200/50">
