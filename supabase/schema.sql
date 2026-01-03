@@ -76,6 +76,7 @@ create table public.tasks (
   id uuid default gen_random_uuid() primary key,
   user_id uuid references auth.users not null,
   theme_id uuid references public.themes(id) on delete cascade,
+  story_id uuid references public.stories(id) on delete set null,
   title text not null,
   description text,
   category text,

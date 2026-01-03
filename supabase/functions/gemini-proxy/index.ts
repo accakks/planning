@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { GoogleGenerativeAI } from "npm:@google/generative-ai"; // Use standard stable package
+import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,8 +21,8 @@ serve(async (req) => {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     
-    // Always use a stable model if the requested one is experimental
-    const modelName = (model && !model.includes('exp')) ? model : 'gemini-1.5-flash';
+    // Explicitly using gemini-1.5-flash as it's the current standard and widely supported
+    const modelName = 'gemini-1.5-flash';
     
     const generativeModel = genAI.getGenerativeModel({ 
         model: modelName,

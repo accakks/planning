@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserProfile, Task, Category, ChartData, Theme, ThemeStyle, Story } from '../types';
-import { getTasks, saveTasks, getThemes, saveThemes, getStories, saveStories } from '../services/storage';
+import { getTasks, saveTasks, getThemes, saveThemes, getStories, saveStories, deleteTask as apiDeleteTask, deleteTheme as apiDeleteTheme, deleteStory as apiDeleteStory } from '../services/storage';
 import { generateSubtasks, getMotivationalQuote, generateThemeStyle } from '../services/gemini';
 import { Plus, Trash2, CheckCircle2, Circle, Loader2, LogOut, Sparkles, TrendingUp, Target, Clock, AlertCircle, Calendar, Map, LayoutList, FolderKanban, BookOpen, X } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
@@ -77,53 +77,51 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
   // Load Data
   useEffect(() => {
-    const loadedTasks = getTasks(user.email);
-    const loadedThemes = getThemes(user.email);
-    const loadedStories = getStories(user.email);
+    const loadData = async () => {
+      const [loadedTasks, loadedThemes, loadedStories] = await Promise.all([
+        getTasks(user.email),
+        getThemes(user.email),
+        getStories(user.email)
+      ]);
 
-    // Migration or Initialization: Ensure at least one theme exists
-    if (loadedThemes.length === 0) {
-      const defaultTheme: Theme = {
-        id: crypto.randomUUID(),
-        title: "2026 Kickoff",
-        description: "Starting the year with high energy and focus.",
-        startDate: "2026-01-01",
-        endDate: "2026-02-15",
-        style: DEFAULT_STYLE
-      };
-      loadedThemes.push(defaultTheme);
-      saveThemes(user.email, loadedThemes);
+      // Migration or Initialization: Ensure at least one theme exists
+      if (loadedThemes.length === 0) {
+        const defaultTheme: Theme = {
+          id: crypto.randomUUID(),
+          title: "2026 Kickoff",
+          description: "Starting the year with high energy and focus.",
+          startDate: "2026-01-01",
+          endDate: "2026-02-15",
+          style: DEFAULT_STYLE
+        };
+        loadedThemes.push(defaultTheme);
+        await saveThemes(user.email, loadedThemes);
+        
+        const updatedTasks = loadedTasks.map(t => t.themeId ? t : { ...t, themeId: defaultTheme.id });
+        setTasks(updatedTasks);
+        await saveTasks(user.email, updatedTasks);
+      } else {
+        setTasks(loadedTasks);
+      }
+
+      setThemes(loadedThemes);
+      setStories(loadedStories);
       
-      const updatedTasks = loadedTasks.map(t => t.themeId ? t : { ...t, themeId: defaultTheme.id });
-      setTasks(updatedTasks);
-      saveTasks(user.email, updatedTasks);
-    } else {
-      setTasks(loadedTasks);
-    }
+      // Select the theme that contains today's date, or the latest one if not found
+      if (!currentThemeId) {
+          const today = new Date().toISOString().split('T')[0];
+          const activeTheme = loadedThemes.find(t => today >= t.startDate && today <= t.endDate) || loadedThemes[loadedThemes.length - 1];
+          if (activeTheme) {
+              setCurrentThemeId(activeTheme.id);
+          }
+      }
 
-    setThemes(loadedThemes);
-    setStories(loadedStories);
-    
-    // Select the theme that contains today's date, or the latest one if not found
-    if (!currentThemeId) {
-        const today = new Date().toISOString().split('T')[0];
-        const activeTheme = loadedThemes.find(t => today >= t.startDate && today <= t.endDate) || loadedThemes[loadedThemes.length - 1];
-        if (activeTheme) {
-            setCurrentThemeId(activeTheme.id);
-        }
-    }
+      setLoading(false);
+    };
 
-    setLoading(false);
+    loadData();
   }, [user.email]);
 
-  // Effects
-  useEffect(() => {
-    if (!loading) {
-      saveTasks(user.email, tasks);
-      saveThemes(user.email, themes);
-      saveStories(user.email, stories);
-    }
-  }, [tasks, themes, stories, user.email, loading]);
 
   const currentTheme = useMemo(() => 
     themes.find(t => t.id === currentThemeId) || themes[0]
@@ -189,14 +187,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       }
 
       if (editingTheme) {
-        setThemes(prev => prev.map(t => t.id === editingTheme.id ? {
-          ...t,
+        const updatedTheme = {
+          ...editingTheme,
           title: newThemeTitle,
           description: newThemeDesc,
           startDate: newThemeStart,
           endDate: newThemeEnd,
           style: style
-        } : t));
+        };
+        setThemes(prev => prev.map(t => t.id === editingTheme.id ? updatedTheme : t));
+        await saveThemes(user.email, [updatedTheme]);
       } else {
         const newTheme: Theme = {
           id: crypto.randomUUID(),
@@ -209,6 +209,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         };
         setThemes(prev => [...prev, newTheme]);
         setCurrentThemeId(newTheme.id);
+        await saveThemes(user.email, [newTheme]);
       }
       
       setIsThemeModalOpen(false);
@@ -224,11 +225,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     }
   };
 
-  const handleDeleteTheme = (themeId: string) => {
+  const handleDeleteTheme = async (themeId: string) => {
     if (themes.length <= 1) {
       alert("You need at least one era defined.");
       return;
     }
+    
+    await apiDeleteTheme(themeId);
+    
     setThemes(prev => prev.filter(t => t.id !== themeId));
     setTasks(prev => prev.filter(t => t.themeId !== themeId));
     setStories(prev => prev.filter(s => s.themeId !== themeId));
@@ -239,15 +243,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     }
   };
 
-  const handleToggleThemeComplete = (themeId: string) => {
-    setThemes(prev => prev.map(t => 
-      t.id === themeId ? { ...t, completed: !t.completed } : t
-    ));
+  const handleToggleThemeComplete = async (themeId: string) => {
+    const theme = themes.find(t => t.id === themeId);
+    if (theme) {
+      const updatedTheme = { ...theme, completed: !theme.completed };
+      setThemes(prev => prev.map(t => 
+        t.id === themeId ? updatedTheme : t
+      ));
+      await saveThemes(user.email, [updatedTheme]);
+    }
   };
 
   // --- Task & Story Logic ---
   
-  const addTask = (title: string, category: Category, minutes: number, dateStr: string, storyId?: string, isAi = false) => {
+  const addTask = async (title: string, category: Category, minutes: number, dateStr: string, storyId?: string, isAi = false) => {
     const task: Task = {
       id: crypto.randomUUID(),
       themeId: currentThemeId,
@@ -260,9 +269,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       isAiGenerated: isAi
     };
     setTasks(prev => [task, ...prev]);
+    await saveTasks(user.email, [task]);
   };
 
-  const handleManualTaskSubmit = (e: React.FormEvent) => {
+  const handleManualTaskSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle) return;
 
@@ -277,6 +287,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         createdAt: new Date().toISOString()
       };
       setStories(prev => [...prev, newStory]);
+      await saveStories(user.email, [newStory]);
       finalStoryId = newStory.id;
     }
 
@@ -308,6 +319,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           createdAt: new Date().toISOString()
         };
         setStories(prev => [...prev, newStory]);
+        await saveStories(user.email, [newStory]);
         finalStoryId = newStory.id;
       }
 
@@ -326,8 +338,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           completed: false,
           isAiGenerated: true
         };
-      });
+      }) as Task[];
+      
       setTasks(prev => [...newTasks, ...prev]);
+      await saveTasks(user.email, newTasks);
       setAiPrompt('');
       setIsTaskModalOpen(false);
       
@@ -344,7 +358,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   };
 
   // --- Copilot Handlers ---
-  const handleCopilotAddTasks = (suggestedTasks: Partial<Task>[]) => {
+  const handleCopilotAddTasks = async (suggestedTasks: Partial<Task>[]) => {
     const now = new Date();
     const newTasks = suggestedTasks.map(t => ({
       id: crypto.randomUUID(),
@@ -356,8 +370,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       dueDate: now.toISOString().slice(0, 10) + 'T23:59',
       completed: false,
       isAiGenerated: true
-    }));
+    })) as Task[];
     setTasks(prev => [...newTasks, ...prev]);
+    await saveTasks(user.email, newTasks);
   };
 
   const handleCopilotAddTheme = async (theme: Partial<Theme>) => {
@@ -377,14 +392,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
     setThemes(prev => [...prev, newTheme]);
     setCurrentThemeId(newTheme.id);
+    await saveThemes(user.email, [newTheme]);
   };
 
-  const toggleTask = (id: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+  const toggleTask = async (id: string) => {
+    const task = tasks.find(t => t.id === id);
+    if (task) {
+      const updatedTask = { ...task, completed: !task.completed };
+      setTasks(prev => prev.map(t => t.id === id ? updatedTask : t));
+      await saveTasks(user.email, [updatedTask]);
+    }
   };
 
-  const deleteTask = (id: string) => {
+  const deleteTask = async (id: string) => {
     setTasks(prev => prev.filter(t => t.id !== id));
+    await apiDeleteTask(id);
   };
 
   const completeFocusTask = () => {

@@ -10,11 +10,14 @@ const App: React.FC = () => {
 
   useEffect(() => {
     // Check for existing session on mount
-    const savedUser = getUser();
-    if (savedUser) {
-      setUser(savedUser);
-    }
-    setLoading(false);
+    const checkUser = async () => {
+      const savedUser = await getUser();
+      if (savedUser) {
+        setUser(savedUser);
+      }
+      setLoading(false);
+    };
+    checkUser();
   }, []);
 
   const handleLogin = (newUser: UserProfile) => {

@@ -50,6 +50,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
       if (data.user) {
         onLogin({
+          id: data.user.id,
           email: data.user.email || '',
           name: data.user.user_metadata.name || 'Planner',
         });

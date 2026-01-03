@@ -4,7 +4,6 @@ import { Category, Task, ThemeStyle, UserProfile, Theme } from '../types';
 
 // Helper to call the Edge Function
 const callGeminiProxy = async (params: any) => {
-  // Force stable model
   params.model = 'gemini-1.5-flash';
 
   const { data, error } = await supabase.functions.invoke('gemini-proxy', {
@@ -27,39 +26,31 @@ export const generateSubtasks = async (goal: string): Promise<Partial<Task>[]> =
     Please break this down into 3-5 specific, actionable, and energetic checklist tasks.
     Estimate the time (in minutes) for each task.
     Assign a category from this list: Career, Health, Finance, Lifestyle, Travel, Personal.
+    
+    IMPORTANT: Return ONLY valid JSON array. No markdown blocks.
+    Example: [{"title": "Task 1", "category": "Career", "estimatedMinutes": 30}]
   `;
 
   try {
     const response = await callGeminiProxy({
       prompt: prompt,
       config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              title: { type: Type.STRING, description: "Action-oriented task title" },
-              description: { type: Type.STRING, description: "Short motivational detail" },
-              category: { 
-                type: Type.STRING, 
-                enum: ["Career", "Health", "Finance", "Lifestyle", "Travel", "Personal"]
-              },
-              estimatedMinutes: { type: Type.INTEGER, description: "Estimated time to complete in minutes" }
-            },
-            required: ["title", "category", "estimatedMinutes"]
-          }
-        }
+        responseMimeType: "application/json"
       }
     });
 
-    if (response.text) {
-      return JSON.parse(response.text);
+    let text = response.text;
+    if (text.includes('```json')) {
+      text = text.replace(/```json/g, '').replace(/```/g, '');
+    }
+
+    if (text) {
+      return JSON.parse(text);
     }
     return [];
   } catch (error) {
     console.error("Failed to generate tasks:", error);
-    throw error;
+    return [];
   }
 };
 
@@ -80,41 +71,39 @@ export const getMotivationalQuote = async (themeContext?: string): Promise<strin
 
 export const generateThemeStyle = async (description: string): Promise<ThemeStyle> => {
   const prompt = `
-    Based on this theme description: "${description}", suggest a Tailwind CSS color palette that matches the mood.
-    Return JSON with fields:
-    - gradientFrom: a tailwind color class (e.g., from-indigo-500)
-    - gradientTo: a tailwind color class (e.g., to-purple-600)
-    - accentColor: a text color class (e.g., text-indigo-600)
-    - bgOverlay: a very light background color class (e.g., bg-indigo-50)
-    - cardBorder: a border color class (e.g., border-indigo-200)
+    Based on this theme description: "${description}", suggest a Tailwind CSS color palette.
+    Return ONLY valid JSON with these fields:
+    - gradientFrom: tailwind color class
+    - gradientTo: tailwind color class
+    - accentColor: text color class
+    - bgOverlay: light bg class
+    - cardBorder: border color class
     
-    Examples:
-    "Energetic kickoff": from-rose-500, to-orange-500, text-rose-600, bg-rose-50, border-rose-200
-    "Calm focus": from-emerald-400, to-cyan-500, text-emerald-700, bg-emerald-50, border-emerald-200
-    "Dark feminine": from-slate-700, to-purple-900, text-purple-900, bg-slate-100, border-purple-200
+    Example JSON:
+    {
+      "gradientFrom": "from-rose-500",
+      "gradientTo": "to-orange-500",
+      "accentColor": "text-rose-600",
+      "bgOverlay": "bg-rose-50",
+      "cardBorder": "border-rose-200"
+    }
   `;
 
   try {
     const response = await callGeminiProxy({
       prompt: prompt,
       config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            gradientFrom: { type: Type.STRING },
-            gradientTo: { type: Type.STRING },
-            accentColor: { type: Type.STRING },
-            bgOverlay: { type: Type.STRING },
-            cardBorder: { type: Type.STRING },
-          },
-          required: ["gradientFrom", "gradientTo", "accentColor", "bgOverlay", "cardBorder"]
-        }
+        responseMimeType: "application/json"
       }
     });
 
-    if (response.text) {
-      return JSON.parse(response.text);
+    let text = response.text;
+    if (text.includes('```json')) {
+        text = text.replace(/```json/g, '').replace(/```/g, '');
+    }
+
+    if (text) {
+      return JSON.parse(text);
     }
     // Fallback
     return {
