@@ -19,6 +19,25 @@ const callGeminiProxy = async (params: any) => {
   return data;
 };
 
+export const testGeminiConnection = async (): Promise<{ success: boolean; message: string; model: string }> => {
+  try {
+    const response = await callGeminiProxy({
+      prompt: "Hello, reply with 'OK' if you can hear me.",
+    });
+    return { 
+      success: true, 
+      message: response.text || "OK", 
+      model: "gemini-2.5-flash" 
+    };
+  } catch (error: any) {
+    return { 
+      success: false, 
+      message: error.message || "Unknown error", 
+      model: "gemini-2.5-flash" 
+    };
+  }
+};
+
 export const generateSubtasks = async (goal: string): Promise<Partial<Task>[]> => {
   const prompt = `
     I am a woman in my late 20s planning for a successful 2026. 

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
+import { testGeminiConnection } from '../services/gemini';
 import { UserProfile } from '../types';
-import { Activity, Database, AlertCircle, CheckCircle, RefreshCcw, X } from 'lucide-react';
+import { Activity, Database, AlertCircle, CheckCircle, RefreshCcw, X, Sparkles } from 'lucide-react';
 
 interface DebugOverlayProps {
   user: UserProfile;
@@ -11,8 +12,14 @@ interface DebugOverlayProps {
 
 const DebugOverlay: React.FC<DebugOverlayProps> = ({ user, lastError, onRefresh }) => {
   const [isOpen, setIsOpen] = useState(false);
+  
+  // Database Status
   const [dbStatus, setDbStatus] = useState<'checking' | 'ok' | 'error'>('checking');
   const [dbMessage, setDbMessage] = useState('');
+
+  // AI Status
+  const [aiStatus, setAiStatus] = useState<'checking' | 'ok' | 'error' | 'idle'>('idle');
+  const [aiMessage, setAiMessage] = useState('');
 
   const checkConnection = async () => {
     setDbStatus('checking');
@@ -24,6 +31,18 @@ const DebugOverlay: React.FC<DebugOverlayProps> = ({ user, lastError, onRefresh 
     } catch (e: any) {
       setDbStatus('error');
       setDbMessage(e.message || 'Connection Failed');
+    }
+  };
+
+  const checkAiConnection = async () => {
+    setAiStatus('checking');
+    const { success, message, model } = await testGeminiConnection();
+    if (success) {
+      setAiStatus('ok');
+      setAiMessage(`Connected (${model})`);
+    } else {
+      setAiStatus('error');
+      setAiMessage(message);
     }
   };
 
