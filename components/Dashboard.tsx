@@ -164,7 +164,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
   useEffect(() => {
     if (currentTheme) {
-      getMotivationalQuote(currentTheme.description).then(setQuote);
+      const today = new Date().toISOString().split('T')[0];
+      const cacheKey = `daily_quote_${currentTheme.id}_${today}`;
+      const cachedQuote = localStorage.getItem(cacheKey);
+
+      if (cachedQuote) {
+        setQuote(cachedQuote);
+      } else {
+        getMotivationalQuote(currentTheme.description).then(newQuote => {
+          setQuote(newQuote);
+          localStorage.setItem(cacheKey, newQuote);
+        });
+      }
     }
   }, [currentTheme]);
 
