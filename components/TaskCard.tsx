@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Task, Category, ThemeStyle, Story } from '../types';
-import { CheckCircle2, Circle, AlertCircle, Clock, BookOpen, Target, Trash2, ChevronUp, ChevronDown, Pencil } from 'lucide-react';
+import { CheckCircle2, Circle, AlertCircle, Clock, BookOpen, Target, Trash2, ChevronUp, ChevronDown, Pencil, Pin } from 'lucide-react';
 import CalendarButton from './CalendarButton';
 
 interface TaskCardProps {
@@ -13,6 +13,7 @@ interface TaskCardProps {
     onEdit: (task: Task) => void;
     onFocus: (task: Task) => void;
     onToggleSubtask: (taskId: string, subtaskId: string) => void;
+    onToggleImportant: (id: string) => void;
 }
 
 const CATEGORY_COLORS: Record<Category, string> = {
@@ -54,6 +55,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
     onEdit,
     onFocus,
     onToggleSubtask,
+    onToggleImportant,
 }) => {
     const status = getTaskStatus(task);
     const parentStory = stories.find(s => s.id === task.storyId);
@@ -84,7 +86,9 @@ const TaskCard: React.FC<TaskCardProps> = ({
                                     <BookOpen size={10} /> {parentStory.title}
                                 </span>
                             )}
-                            <h4 className={`font-semibold truncate ${task.completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.title}</h4>
+                            <div className="flex items-center gap-2 min-w-0">
+                                <h4 className={`font-semibold truncate ${task.completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.title}</h4>
+                            </div>
                         </div>
 
                         {!task.completed && (
@@ -104,7 +108,6 @@ const TaskCard: React.FC<TaskCardProps> = ({
                         </span>
                         <span>•</span>
                         <span>{task.estimatedMinutes}m</span>
-                        {task.description && <span className="hidden sm:inline">• {task.description}</span>}
                     </div>
 
                     {/* Subtasks Summary / Toggle */}
@@ -130,20 +133,27 @@ const TaskCard: React.FC<TaskCardProps> = ({
 
                     {/* CheckList Section */}
                     {isExpanded && (
-                        <div className="mt-3 pl-2 border-l-2 border-slate-100 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                            {(task.subtasks || []).map(st => (
-                                <div key={st.id} className="flex items-center gap-2 min-h-[28px]">
-                                    <button
-                                        onClick={() => onToggleSubtask(task.id, st.id)}
-                                        className={`flex-shrink-0 text-slate-300 hover:text-slate-500 ${st.completed ? 'text-green-500' : ''}`}
-                                    >
-                                        {st.completed ? <CheckCircle2 size={16} /> : <Circle size={16} />}
-                                    </button>
-                                    <span className={`flex-1 text-sm truncate ${st.completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
-                                        {st.title}
-                                    </span>
-                                </div>
-                            ))}
+                        <div className="mt-3 pl-2 border-l-2 border-slate-100 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                            {task.description && (
+                                <p className="text-sm text-slate-600 leading-relaxed italic border-b border-dashed border-slate-100 pb-2">
+                                    {task.description}
+                                </p>
+                            )}
+                            <div className="space-y-2">
+                                {(task.subtasks || []).map(st => (
+                                    <div key={st.id} className="flex items-center gap-2 min-h-[28px]">
+                                        <button
+                                            onClick={() => onToggleSubtask(task.id, st.id)}
+                                            className={`flex-shrink-0 text-slate-300 hover:text-slate-500 ${st.completed ? 'text-green-500' : ''}`}
+                                        >
+                                            {st.completed ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                                        </button>
+                                        <span className={`flex-1 text-sm truncate ${st.completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                                            {st.title}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
 
@@ -166,6 +176,18 @@ const TaskCard: React.FC<TaskCardProps> = ({
                         >
                             <Pencil size={16} /> Edit
                         </button>
+                        {parentStory?.isImportant ? (
+                            <div className="flex items-center gap-1 text-xs font-bold text-amber-500">
+                                <Pin size={16} className="fill-amber-500" /> Pinned
+                            </div>
+                        ) : (
+                            <button
+                                onClick={() => onToggleImportant(task.id)}
+                                className={`flex items-center gap-1 text-xs font-bold ${task.isImportant ? 'text-amber-500' : 'text-slate-400'}`}
+                            >
+                                <Pin size={16} className={task.isImportant ? 'fill-amber-500' : ''} /> {task.isImportant ? 'Pinned' : 'Pin'}
+                            </button>
+                        )}
                         <button
                             onClick={() => onDelete(task.id)}
                             className="flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-red-500"
@@ -190,10 +212,24 @@ const TaskCard: React.FC<TaskCardProps> = ({
                     <button
                         onClick={() => onEdit(task)}
                         className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors"
+                        title="Edit Task"
                     >
                         <Pencil size={18} />
                     </button>
-                    <button onClick={() => onDelete(task.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+                    {parentStory?.isImportant ? (
+                        <div className="p-2 text-amber-500 bg-amber-50 rounded-full" title="Pinned by Story">
+                            <Pin size={18} className="fill-amber-500" />
+                        </div>
+                    ) : (
+                        <button
+                            onClick={() => onToggleImportant(task.id)}
+                            className={`p-2 transition-colors rounded-full ${task.isImportant ? 'text-amber-500 bg-amber-50 hover:bg-amber-100' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'}`}
+                            title={task.isImportant ? 'Unpin Task' : 'Pin to Top'}
+                        >
+                            <Pin size={18} className={task.isImportant ? 'fill-amber-500' : ''} />
+                        </button>
+                    )}
+                    <button onClick={() => onDelete(task.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors" title="Delete Task">
                         <Trash2 size={18} />
                     </button>
                 </div>

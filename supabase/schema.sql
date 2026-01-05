@@ -85,6 +85,7 @@ create table public.tasks (
   completed boolean default false,
   completed boolean default false,
   is_ai_generated boolean default false,
+  is_important boolean default false,
   subtasks jsonb default '[]'::jsonb,
   created_at timestamptz default now()
 );
@@ -115,6 +116,7 @@ create table public.stories (
   theme_id uuid references public.themes(id) on delete cascade,
   title text not null,
   description text,
+  is_important boolean default false,
   created_at timestamptz default now()
 );
 

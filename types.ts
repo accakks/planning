@@ -30,6 +30,7 @@ export interface Story {
   themeId: string;
   title: string;
   description?: string;
+  isImportant?: boolean;
   createdAt: string;
 }
 
@@ -44,6 +45,7 @@ export interface Task {
   estimatedMinutes: number;
   completed: boolean;
   isAiGenerated?: boolean;
+  isImportant?: boolean;
   subtasks?: Subtask[];
 }
 
@@ -78,4 +80,19 @@ export interface ChatMessage {
   // If the AI suggests actions, they are parsed and stored here
   suggestedTasks?: Partial<Task>[];
   suggestedTheme?: Partial<Theme>;
+  suggestedStory?: Partial<Story>;
+  appliedTaskIds?: string[]; // indices of suggestedTasks
+  rejectedTaskIds?: string[]; // indices of suggestedTasks
+  themeApplied?: boolean;
+  themeRejected?: boolean;
+  storyApplied?: boolean;
+  storyRejected?: boolean;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ChatMessage[];
 }

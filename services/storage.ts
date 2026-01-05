@@ -61,6 +61,7 @@ export const getTasks = async (email?: string): Promise<Task[]> => {
     estimatedMinutes: t.estimated_minutes,
     completed: t.completed,
     isAiGenerated: t.is_ai_generated,
+    isImportant: t.is_important,
     subtasks: t.subtasks || []
   }));
 };
@@ -86,6 +87,7 @@ export const saveTasks = async (email: string, tasks: Task[]): Promise<boolean> 
     estimated_minutes: t.estimatedMinutes,
     completed: t.completed,
     is_ai_generated: t.isAiGenerated,
+    is_important: t.isImportant || false,
     subtasks: t.subtasks || []
   }));
 
@@ -171,6 +173,7 @@ export const getStories = async (email?: string): Promise<Story[]> => {
     themeId: s.theme_id,
     title: s.title,
     description: s.description,
+    isImportant: s.is_important,
     createdAt: s.created_at
   }));
 };
@@ -187,6 +190,7 @@ export const saveStories = async (email: string, stories: Story[]): Promise<bool
     theme_id: s.themeId,
     title: s.title,
     description: s.description,
+    is_important: s.isImportant || false,
     created_at: s.createdAt
   }));
 

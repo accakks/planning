@@ -4,8 +4,9 @@ import { Category, Task, ThemeStyle, UserProfile, Theme } from '../types';
 
 // Helper to call the Edge Function
 const callGeminiProxy = async (params: any) => {
-  // Use gemini-2.0-flash for latest features and stability
-  params.model = 'gemini-2.0-flash';
+  // Use gemini-2.0-flash for latest features and stability by default
+  const modelToUse = params.model || 'gemini-2.0-flash';
+  params.model = modelToUse;
 
   const { data, error } = await supabase.functions.invoke('gemini-proxy', {
     body: params,
@@ -74,14 +75,22 @@ export const generateSubtasks = async (goal: string): Promise<Partial<Task>[]> =
   }
 };
 
-export const generateTaskChecklist = async (taskTitle: string, category: string, storyContext?: string): Promise<any[]> => {
+export const generateTaskChecklist = async (
+  taskTitle: string,
+  category: string,
+  storyContext?: string,
+  taskDescription?: string,
+  storyDescription?: string
+): Promise<any[]> => {
   const prompt = `
     I have a task: "${taskTitle}".
+    ${taskDescription ? `Task Details: ${taskDescription}` : ''}
     Category: ${category}
-    ${storyContext ? `Context/Goal: ${storyContext}` : ''}
+    ${storyContext ? `Goal/Story: ${storyContext}` : ''}
+    ${storyDescription ? `Goal/Story Context: ${storyDescription}` : ''}
     
     Please break this down into 3-5 sub-steps to complete it.
-    The steps should be specific to the context.
+    The steps should be specific to the context provided.
     Return ONLY a valid JSON array of objects with the following structure:
     [
       { "title": "Subtask title", "completed": false }
@@ -239,43 +248,79 @@ export const analyzeTask = async (taskTitle: string, existingStories: { id: stri
 
 // --- Copilot Logic ---
 
-export const getCopilotSystemInstruction = (user: UserProfile, currentTheme: Theme, tasks: Task[]) => {
+export const getCopilotSystemInstruction = (user: UserProfile, currentTheme: Theme, tasks: Task[], stories: any[]) => {
+  const storiesContext = stories.length > 0
+    ? `
+- Stories in this Era: ${stories.length} stories
+- Story List: ${JSON.stringify(stories.map(s => ({ id: s.id, title: s.title })))}`
+    : '';
+
   return `
-    You are "The 29th Chapter Copilot", an energetic, supportive, and highly organized strategic planner for ${user.name}.
-    
-    CONTEXT:
-    - User Name: ${user.name}
-    - Current Era (Theme): ${currentTheme.title} (${currentTheme.description})
-    - Current Tasks in this Era: ${tasks.length} tasks.
-    - Task List: ${JSON.stringify(tasks.map(t => t.title))}
+You are "The 29th Chapter Copilot", an energetic, supportive, and highly organized strategic planner for ${user.name}.
 
-    YOUR GOAL:
-    Help the user plan their 2026. Brainstorm ideas, suggest tasks, and help define new Eras (Themes).
-    Be concise, conversational, and energetic. Use emojis occasionally.
+CONTEXT:
+- User Name: ${user.name}
+- Current Era (Theme): ${currentTheme.title} (${currentTheme.description})
+- Current Tasks in this Era: ${tasks.length} tasks.
+- Task List: ${JSON.stringify(tasks.map(t => ({ id: t.id, title: t.title, dueDate: t.dueDate, estimatedMinutes: t.estimatedMinutes, storyId: t.storyId, hasSubtasks: !!t.subtasks?.length })))} ${storiesContext}
 
-    AGENTIC TOOLS (IMPORTANT):
-    You can propose actions for the user to take. 
-    
-    1. SUGGEST TASKS:
-    If the user agrees to a plan or asks for tasks, output a JSON block inside specific tags:
-    <JSON_ACTION type="TASKS">
-    [
-      { "title": "Task Name", "description": "Short desc", "category": "Career", "estimatedMinutes": 30 }
+DATA STRUCTURES:
+- Stories: Parent containers that group related tasks (e.g., "Launch Website", "Q1 Marketing")
+- Tasks: Can be linked to a story via "storyId" field, have category, estimated time, and optional subtasks
+- Subtasks: Breakdown of a task into smaller steps with structure: { "id": "uuid", "title": "Step name", "completed": false }
+
+YOUR GOAL:
+Help the user plan their 2026. Brainstorm ideas, suggest tasks, create stories, and help define new Eras (Themes).
+Analyze the user's schedule: if they have too many tasks due on the same day or a very crowded week, point it out and suggest rescheduling. 
+Review "estimatedMinutes" for existing tasks: if a task seems too complex for its time (e.g., "Build an App" in 30 mins) or too simple (e.g., "Check Email" in 5 hours), suggest a more realistic time.
+Be supportive but realistic about time constraints.
+Be concise, conversational, and energetic. Use emojis occasionally.
+When suggesting tasks, consider linking them to existing stories or creating new stories for better organization.
+If you suggest moving or updating an existing task, include its "id" in the JSON_ACTION so the system can update it instead of creating a duplicate.
+
+AGENTIC TOOLS (IMPORTANT):
+You can propose actions for the user to take. 
+
+<JSON_ACTION type="TASKS">
+[
+  { 
+    "id": "EXISTING-UUID-OR-OMIT-FOR-NEW",
+    "title": "Task Name", 
+    "description": "Short desc", 
+    "category": "Career", 
+    "estimatedMinutes": 30,
+    "storyId": "UUID-OR-TITLE",
+    "subtasks": [
+      { "title": "First step", "completed": false },
+      { "title": "Second step", "completed": false }
     ]
-    </JSON_ACTION>
+  }
+]
+</JSON_ACTION>
+Note: id, storyId and subtasks are optional. Include "id" to UPDATE an existing task. Use "dueDate" (ISO format) to reschedule tasks. For storyId, you can use the UUID provided in the Story List OR just the Story Title if easier; the system will match it! Include subtasks for complex tasks.
 
-    2. SUGGEST NEW ERA:
-    If the user wants to start a new phase/era, output a JSON block:
-    <JSON_ACTION type="THEME">
-    {
-      "title": "Era Name",
-      "description": "Vibe description",
-      "startDate": "2026-06-01",
-      "endDate": "2026-08-30"
-    }
-    </JSON_ACTION>
+2. SUGGEST STORY:
+If the user wants to create a parent story to group related tasks:
+<JSON_ACTION type="STORY">
+{
+  "title": "Story Name",
+  "description": "What this story is about"
+}
+</JSON_ACTION>
 
-    Always keep your conversational text OUTSIDE the <JSON_ACTION> tags.
+3. SUGGEST NEW ERA:
+If the user wants to start a new phase/era, output a JSON block:
+<JSON_ACTION type="THEME">
+{
+  "title": "Era Name",
+  "description": "Vibe description",
+  "startDate": "2026-06-01",
+  "endDate": "2026-08-30"
+}
+</JSON_ACTION>
+
+Always keep your conversational text OUTSIDE the <JSON_ACTION> tags.
+You can use multiple action types in one response if needed.
   `;
 };
 
@@ -284,9 +329,10 @@ export const chatWithCopilot = async (
   message: string,
   user: UserProfile,
   currentTheme: Theme,
-  tasks: Task[]
+  tasks: Task[],
+  stories: any[] = []
 ) => {
-  const systemInstruction = getCopilotSystemInstruction(user, currentTheme, tasks);
+  const systemInstruction = getCopilotSystemInstruction(user, currentTheme, tasks, stories);
 
   // Filter history to remove any empty parts if necessary, though simpler is better
   const cleanHistory = history.map(h => ({ role: h.role, parts: h.parts }));
@@ -295,6 +341,7 @@ export const chatWithCopilot = async (
     prompt: message,
     history: cleanHistory,
     systemInstruction: systemInstruction,
+    model: 'gemini-3-flash-preview',
     config: {
       temperature: 0.8,
     }

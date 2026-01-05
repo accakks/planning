@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { UserProfile, Task, Category, ChartData, Theme, ThemeStyle, Story } from '../types';
 import { getTasks, saveTasks, getThemes, saveThemes, getStories, saveStories, deleteTask as apiDeleteTask, deleteTheme as apiDeleteTheme, deleteStory as apiDeleteStory } from '../services/storage';
 import { generateSubtasks, getMotivationalQuote, generateThemeStyle, generateTaskChecklist, analyzeTask } from '../services/gemini';
-import { Plus, Trash2, CheckCircle2, Circle, Loader2, LogOut, Sparkles, TrendingUp, Target, Clock, AlertCircle, Calendar, Map, LayoutList, FolderKanban, BookOpen, X, Pencil, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, Circle, Loader2, LogOut, Sparkles, TrendingUp, Target, Clock, AlertCircle, Calendar, Map, LayoutList, FolderKanban, BookOpen, X, Pencil, ChevronDown, ChevronUp, Pin, Search, Filter, Eye, EyeOff } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import CalendarButton from './CalendarButton';
 import TaskCard from './TaskCard';
@@ -10,7 +10,7 @@ import FocusMode from './FocusMode';
 import YearRoadmap from './YearRoadmap';
 import Copilot from './Copilot';
 
-import DebugOverlay from './DebugOverlay';
+
 
 interface DashboardProps {
   user: UserProfile;
@@ -36,7 +36,15 @@ const DEFAULT_STYLE: ThemeStyle = {
 };
 
 
-const StorySection = ({ story, taskCount, onAddTask, children }: { story: Story, taskCount: number, onAddTask: () => void, children: React.ReactNode }) => {
+interface StorySectionProps {
+  story: Story;
+  taskCount: number;
+  onAddTask: () => void;
+  onToggleImportant: () => void;
+  children: React.ReactNode;
+}
+
+const StorySection: React.FC<StorySectionProps> = ({ story, taskCount, onAddTask, onToggleImportant, children }) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
   return (
@@ -51,6 +59,16 @@ const StorySection = ({ story, taskCount, onAddTask, children }: { story: Story,
           </button>
           <BookOpen size={16} className="text-slate-400" />
           <h4 className="font-bold text-slate-700">{story.title}</h4>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleImportant();
+            }}
+            className={`p-1 transition-colors rounded ${story.isImportant ? 'text-amber-500' : 'text-slate-300 hover:text-slate-500'}`}
+            title={story.isImportant ? 'Unpin Story' : 'Pin Story to Top'}
+          >
+            <Pin size={14} className={story.isImportant ? 'fill-amber-500' : ''} />
+          </button>
           <span className="text-xs text-slate-400">({taskCount})</span>
         </div>
         <button
@@ -109,19 +127,27 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     return now.toISOString().slice(0, 16);
   });
+  const [newTaskDesc, setNewTaskDesc] = useState('');
 
   // Story selection in Task Modal
   const [selectedStoryId, setSelectedStoryId] = useState<string>('');
   const [isCreatingNewStory, setIsCreatingNewStory] = useState(false);
   const [newStoryTitle, setNewStoryTitle] = useState('');
+  const [newStoryDesc, setNewStoryDesc] = useState('');
 
   const [aiPrompt, setAiPrompt] = useState('');
   const [isGeneratingTasks, setIsGeneratingTasks] = useState(false);
   const [isAnalyzingTask, setIsAnalyzingTask] = useState(false);
   const [lastAnalyzedTitle, setLastAnalyzedTitle] = useState('');
   const [newSubtasks, setNewSubtasks] = useState<{ id: string; title: string; completed: boolean }[]>([]);
+  const [newTaskIsImportant, setNewTaskIsImportant] = useState(false);
   const [isGeneratingSubtasks, setIsGeneratingSubtasks] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
+
+  // Filtering states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedFilterCategory, setSelectedFilterCategory] = useState<Category | 'All'>('All');
+  const [hideCompleted, setHideCompleted] = useState(false);
 
   const openAddTaskModal = (storyId?: string) => {
     if (currentTheme.completed) {
@@ -135,11 +161,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     setNewTaskDate(now.toISOString().slice(0, 16));
+    setNewTaskDesc('');
 
     setIsTaskModalOpen(true);
     setIsCreatingNewStory(false);
     setSelectedStoryId(storyId || '');
+    setNewStoryTitle('');
+    setNewStoryDesc('');
     setNewSubtasks([]);
+    setNewTaskIsImportant(false);
   };
 
   // Load Data
@@ -249,6 +279,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const currentThemeStories = useMemo(() =>
     stories.filter(s => s.themeId === currentThemeId)
     , [stories, currentThemeId]);
+
+  const filteredTasks = useMemo(() => {
+    return currentThemeTasks.filter(task => {
+      // Search filter
+      const matchesSearch = searchQuery === '' ||
+        task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        task.description?.toLowerCase().includes(searchQuery.toLowerCase());
+
+      // Category filter
+      const matchesCategory = selectedFilterCategory === 'All' || task.category === selectedFilterCategory;
+
+      // Completion filter
+      const matchesCompletion = !hideCompleted || !task.completed;
+
+      return matchesSearch && matchesCategory && matchesCompletion;
+    });
+  }, [currentThemeTasks, searchQuery, selectedFilterCategory, hideCompleted]);
 
   const stats = useMemo(() => {
     const total = currentThemeTasks.length;
@@ -391,10 +438,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     setNewTaskCategory(task.category);
     setNewTaskMinutes(task.estimatedMinutes);
     setNewTaskDate(task.dueDate);
+    setNewTaskDesc(task.description || '');
     setSelectedStoryId(task.storyId || '');
     setIsCreatingNewStory(false);
     setNewStoryTitle('');
+    setNewStoryDesc('');
     setNewSubtasks(task.subtasks || []);
+    setNewTaskIsImportant(task.isImportant || false);
     setIsTaskModalOpen(true);
   };
 
@@ -410,6 +460,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         id: crypto.randomUUID(),
         themeId: currentThemeId,
         title: newStoryTitle,
+        description: newStoryDesc,
         createdAt: new Date().toISOString()
       };
       setStories(prev => [...prev, newStory]);
@@ -421,11 +472,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       const updatedTask: Task = {
         ...editingTask,
         title: newTaskTitle,
+        description: newTaskDesc,
         category: newTaskCategory,
         estimatedMinutes: newTaskMinutes,
         dueDate: newTaskDate,
         storyId: finalStoryId || undefined,
         subtasks: newSubtasks,
+        isImportant: newTaskIsImportant,
       };
       setTasks(prev => prev.map(t => t.id === editingTask.id ? updatedTask : t));
       await saveTasks(user.email, [updatedTask]);
@@ -435,11 +488,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         themeId: currentThemeId,
         storyId: finalStoryId || undefined,
         title: newTaskTitle,
+        description: newTaskDesc,
         category: newTaskCategory,
         estimatedMinutes: newTaskMinutes,
         dueDate: newTaskDate,
         completed: false,
         subtasks: newSubtasks,
+        isImportant: newTaskIsImportant,
       };
       setTasks(prev => [...prev, newTask]);
       await saveTasks(user.email, [newTask]);
@@ -448,9 +503,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     // Reset
     setEditingTask(null);
     setNewTaskTitle('');
+    setNewTaskDesc('');
     setSelectedStoryId('');
     setIsCreatingNewStory(false);
     setNewStoryTitle('');
+    setNewStoryDesc('');
     setNewSubtasks([]);
     setIsTaskModalOpen(false);
   };
@@ -549,13 +606,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     if (!newTaskTitle) return;
     setIsGeneratingSubtasks(true);
     try {
-      const storyContext = selectedStoryId
-        ? stories.find(s => s.id === selectedStoryId)?.title
-        : undefined;
+      const parentStory = selectedStoryId ? stories.find(s => s.id === selectedStoryId) : undefined;
+      const storyContext = parentStory?.title;
+      const storyDescription = parentStory?.description;
+
       const generatedSubtasks = await generateTaskChecklist(
         newTaskTitle,
         newTaskCategory,
-        storyContext
+        storyContext,
+        newTaskDesc,
+        storyDescription
       );
 
       // Map to include id and completed fields
@@ -573,22 +633,77 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     }
   };
 
-  // --- Copilot Handlers ---
   const handleCopilotAddTasks = async (suggestedTasks: Partial<Task>[]) => {
     const now = new Date();
-    const newTasks = suggestedTasks.map(t => ({
-      id: crypto.randomUUID(),
-      themeId: currentThemeId,
-      title: t.title || "New Idea",
-      description: t.description || "",
-      category: t.category || Category.PERSONAL,
-      estimatedMinutes: t.estimatedMinutes || 30,
-      dueDate: now.toISOString().slice(0, 10) + 'T23:59',
-      completed: false,
-      isAiGenerated: true
-    })) as Task[];
-    setTasks(prev => [...newTasks, ...prev]);
-    await saveTasks(user.email, newTasks);
+    const tasksToUpdate: Task[] = [];
+    const tasksToCreate: Task[] = [];
+
+    suggestedTasks.forEach(t => {
+      // Smart Story Resolution: Try to find by ID first, then by title
+      let resolvedStoryId = t.storyId;
+      if (resolvedStoryId) {
+        const foundById = stories.find(s => s.id === resolvedStoryId);
+        if (!foundById) {
+          const foundByTitle = stories.find(s => s.title.toLowerCase() === resolvedStoryId?.toLowerCase());
+          if (foundByTitle) resolvedStoryId = foundByTitle.id;
+          else resolvedStoryId = undefined; // Fallback if no match
+        }
+      }
+
+      // Sanitize Subtasks: Ensure they have proper UUIDs
+      const sanitizedSubtasks = t.subtasks?.map(st => ({
+        id: (st.id && st.id.length > 20) ? st.id : crypto.randomUUID(), // Only keep if it looks like a real UUID
+        title: st.title || "Step",
+        completed: !!st.completed
+      }));
+
+      // Check if this is an update to an existing task
+      const existingTask = t.id ? tasks.find(et => et.id === t.id) : null;
+
+      if (existingTask) {
+        tasksToUpdate.push({
+          ...existingTask,
+          title: t.title || existingTask.title,
+          description: t.description !== undefined ? t.description : existingTask.description,
+          category: t.category || existingTask.category,
+          estimatedMinutes: t.estimatedMinutes || existingTask.estimatedMinutes,
+          dueDate: t.dueDate || existingTask.dueDate,
+          storyId: resolvedStoryId !== undefined ? resolvedStoryId : existingTask.storyId,
+          subtasks: sanitizedSubtasks || existingTask.subtasks
+        });
+      } else {
+        tasksToCreate.push({
+          id: crypto.randomUUID(),
+          themeId: currentThemeId,
+          storyId: resolvedStoryId,
+          title: t.title || "New Idea",
+          description: t.description || "",
+          category: t.category || Category.PERSONAL,
+          estimatedMinutes: t.estimatedMinutes || 30,
+          dueDate: t.dueDate || (now.toISOString().slice(0, 10) + 'T23:59'),
+          completed: false,
+          isAiGenerated: true,
+          subtasks: sanitizedSubtasks
+        } as Task);
+      }
+    });
+
+    if (tasksToUpdate.length > 0 || tasksToCreate.length > 0) {
+      setTasks(prev => {
+        let updatedList = [...prev];
+
+        // Apply updates
+        tasksToUpdate.forEach(updatedTask => {
+          updatedList = updatedList.map(t => t.id === updatedTask.id ? updatedTask : t);
+        });
+
+        // Add new ones
+        return [...tasksToCreate, ...updatedList];
+      });
+
+      // Save all changes to storage
+      await saveTasks(user.email, [...tasksToUpdate, ...tasksToCreate]);
+    }
   };
 
   const handleCopilotAddTheme = async (theme: Partial<Theme>) => {
@@ -609,6 +724,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     setThemes(prev => [...prev, newTheme]);
     setCurrentThemeId(newTheme.id);
     await saveThemes(user.email, [newTheme]);
+  };
+
+  const handleCopilotAddStory = async (story: Partial<Story>) => {
+    if (!story.title) return;
+
+    const newStory: Story = {
+      id: crypto.randomUUID(),
+      themeId: currentThemeId,
+      title: story.title,
+      description: story.description,
+      createdAt: new Date().toISOString()
+    };
+
+    setStories(prev => [...prev, newStory]);
+    await saveStories(user.email, [newStory]);
   };
 
   const toggleTask = async (id: string) => {
@@ -665,6 +795,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     await saveTasks(user.email, [updatedTask]);
   };
 
+  const handleToggleTaskImportant = async (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const updatedTask = { ...task, isImportant: !task.isImportant };
+    setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+    await saveTasks(user.email, [updatedTask]);
+  };
+
+  const handleToggleStoryImportant = async (storyId: string) => {
+    const story = stories.find(s => s.id === storyId);
+    if (!story) return;
+
+    const updatedStory = { ...story, isImportant: !story.isImportant };
+    setStories(prev => prev.map(s => s.id === storyId ? updatedStory : s));
+    await saveStories(user.email, [updatedStory]);
+  };
+
   const handleGenerateChecklist = async (taskId: string) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -676,7 +824,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     // For now we'll just try to fetch
     try {
       // AI Call with context
-      const checklist = await generateTaskChecklist(task.title, task.category, story?.title);
+      const checklist = await generateTaskChecklist(
+        task.title,
+        task.category,
+        story?.title,
+        task.description,
+        story?.description
+      );
 
       const newSubtasks = checklist.map((item: any) => ({
         id: crypto.randomUUID(),
@@ -902,11 +1056,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         user={user}
         currentTheme={currentTheme}
         tasks={currentThemeTasks}
+        stories={currentThemeStories}
         onAddTasks={handleCopilotAddTasks}
         onAddTheme={handleCopilotAddTheme}
+        onAddStory={handleCopilotAddStory}
       />
-      {/* Debug Overlay */}
-      <DebugOverlay user={user} lastError={lastError} onRefresh={loadData} />
+
 
       {/* Header */}
       <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200/50">
@@ -957,54 +1112,105 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 relative z-10">
-        {/* Quote Banner */}
-        <div className="bg-slate-900 rounded-3xl p-8 mb-10 text-white relative overflow-hidden shadow-xl transition-all duration-500">
-          <div className={`absolute top-0 right-0 w-96 h-96 bg-gradient-to-br ${themeStyle.gradientFrom} ${themeStyle.gradientTo} rounded-full mix-blend-overlay filter blur-3xl opacity-40 -translate-y-1/3 translate-x-1/4 transition-colors duration-1000`}></div>
-
-          <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
-            <div>
-              <div className={`inline-flex items-center gap-2 mb-3 px-3 py-1 rounded-full bg-white/10 backdrop-blur text-sm font-medium border border-white/20`}>
-                <Sparkles size={14} className="text-yellow-300" />
-                <span>Daily Vibe</span>
-              </div>
-              <h2 className="text-2xl md:text-4xl font-display font-light leading-tight">
-                "{quote}"
-              </h2>
-            </div>
-            {/* Disable adding tasks if theme is completed */}
-            <button
-              onClick={() => openAddTaskModal()}
-              className={`bg-white text-slate-900 px-6 py-3 rounded-xl font-bold hover:bg-slate-50 transition-colors shadow-lg flex items-center gap-2 whitespace-nowrap ${currentTheme.completed ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <Plus size={20} /> Add Tasks
-            </button>
-          </div>
-        </div>
 
         {/* Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
           {/* Left Column: Task List */}
           <div className="lg:col-span-2 space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
               <h3 className="text-xl font-bold flex items-center gap-2 text-slate-800">
                 Action Plan <span className={`text-xs px-2 py-1 rounded-full ${themeStyle.bgOverlay} ${themeStyle.accentColor} border ${themeStyle.cardBorder}`}>{stats.total} Tasks</span>
               </h3>
+              <button
+                onClick={() => openAddTaskModal()}
+                className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm
+                    ${themeStyle.accentColor} ${themeStyle.bgOverlay} border ${themeStyle.cardBorder} hover:brightness-95
+                    ${currentTheme.completed ? 'opacity-50 cursor-not-allowed' : ''}`}
+                disabled={currentTheme.completed}
+              >
+                <Plus size={14} /> Add Tasks
+              </button>
+            </div>
 
-              {/* View Toggle */}
-              <div className="bg-white rounded-lg border border-slate-200 p-1 flex items-center gap-1 shadow-sm">
+            {/* View Toggle */}
+            <div className="bg-white rounded-lg border border-slate-200 p-1 flex items-center gap-1 shadow-sm">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-1.5 rounded-md transition-all flex items-center gap-1 text-xs font-bold ${viewMode === 'list' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+              >
+                <LayoutList size={14} /> List
+              </button>
+              <button
+                onClick={() => setViewMode('story')}
+                className={`p-1.5 rounded-md transition-all flex items-center gap-1 text-xs font-bold ${viewMode === 'story' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+              >
+                <FolderKanban size={14} /> Story
+              </button>
+            </div>
+
+            {/* Filter Bar */}
+
+            <div className="flex flex-col sm:flex-row gap-4 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input
+                  type="text"
+                  placeholder="Search tasks..."
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-sm focus:ring-2 focus:ring-slate-200 focus:border-slate-300 transition-all outline-none"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 sm:flex-none">
+                  <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                  <select
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl text-sm pl-9 pr-3 py-2 focus:ring-2 focus:ring-slate-200 outline-none appearance-none cursor-pointer"
+                    value={selectedFilterCategory}
+                    onChange={(e) => setSelectedFilterCategory(e.target.value as Category | 'All')}
+                  >
+                    <option value="All">All Areas</option>
+                    {Object.values(Category).map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
                 <button
-                  onClick={() => setViewMode('list')}
-                  className={`p-1.5 rounded-md transition-all flex items-center gap-1 text-xs font-bold ${viewMode === 'list' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                  onClick={() => setHideCompleted(!hideCompleted)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold transition-all border shrink-0
+                    ${hideCompleted
+                      ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                  title={hideCompleted ? "Show completed tasks" : "Hide completed tasks"}
                 >
-                  <LayoutList size={14} /> List
+                  {hideCompleted ? <EyeOff size={16} /> : <Eye size={16} />}
+                  <span className="hidden sm:inline">{hideCompleted ? 'Done Hidden' : 'Hide Done'}</span>
                 </button>
-                <button
-                  onClick={() => setViewMode('story')}
-                  className={`p-1.5 rounded-md transition-all flex items-center gap-1 text-xs font-bold ${viewMode === 'story' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
-                >
-                  <FolderKanban size={14} /> Story
-                </button>
+
+                {(searchQuery || selectedFilterCategory !== 'All' || hideCompleted) && (
+                  <button
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedFilterCategory('All');
+                      setHideCompleted(false);
+                    }}
+                    className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors shrink-0"
+                    title="Clear all filters"
+                  >
+                    <X size={20} />
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1021,13 +1227,36 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                   Create a task
                 </button>
               </div>
+            ) : filteredTasks.length === 0 ? (
+              <div className="text-center py-20 bg-white/40 backdrop-blur rounded-3xl border border-slate-200">
+                <Search className="mx-auto mb-4 text-slate-300" size={48} />
+                <h3 className="text-lg font-bold text-slate-700">No matching tasks</h3>
+                <p className="text-slate-500 mb-6">Adjust your filters to see more results.</p>
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedFilterCategory('All');
+                    setHideCompleted(false);
+                  }}
+                  className="text-slate-900 font-bold hover:underline"
+                >
+                  Clear all filters
+                </button>
+              </div>
             ) : (
               <div className="space-y-4">
 
                 {viewMode === 'list' && (
                   <div className="space-y-3">
-                    {[...currentThemeTasks].sort((a, b) => {
+                    {[...filteredTasks].sort((a, b) => {
                       if (a.completed !== b.completed) return Number(a.completed) - Number(b.completed);
+
+                      const aStory = stories.find(s => s.id === a.storyId);
+                      const bStory = stories.find(s => s.id === b.storyId);
+                      const aIsImportant = a.isImportant || aStory?.isImportant;
+                      const bIsImportant = b.isImportant || bStory?.isImportant;
+
+                      if (aIsImportant !== bIsImportant) return Number(bIsImportant || false) - Number(aIsImportant || false);
                       return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
                     }).map(task => (
                       <TaskCard
@@ -1041,6 +1270,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                         onEdit={handleEditTask}
                         onFocus={setFocusTask}
                         onToggleSubtask={handleToggleSubtask}
+                        onToggleImportant={handleToggleTaskImportant}
                       />
                     ))}
                   </div>
@@ -1049,8 +1279,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                 {viewMode === 'story' && (
                   <>
                     {/* Render Tasks grouped by Story */}
-                    {currentThemeStories.map(story => {
-                      const storyTasks = currentThemeTasks.filter(t => t.storyId === story.id);
+                    {currentThemeStories.sort((a, b) => {
+                      const aHasImportant = a.isImportant || filteredTasks.some(t => t.storyId === a.id && t.isImportant);
+                      const bHasImportant = b.isImportant || filteredTasks.some(t => t.storyId === b.id && t.isImportant);
+                      return Number(bHasImportant) - Number(aHasImportant);
+                    }).map(story => {
+                      const storyTasks = filteredTasks.filter(t => t.storyId === story.id);
                       if (storyTasks.length === 0) return null;
 
                       return (
@@ -1059,8 +1293,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                           story={story}
                           taskCount={storyTasks.length}
                           onAddTask={() => openAddTaskModal(story.id)}
+                          onToggleImportant={() => handleToggleStoryImportant(story.id)}
                         >
-                          {storyTasks.sort((a, b) => Number(a.completed) - Number(b.completed)).map(task => (
+                          {storyTasks.sort((a, b) => {
+                            if (a.completed !== b.completed) return Number(a.completed) - Number(b.completed);
+
+                            const aIsImportant = a.isImportant || story.isImportant;
+                            const bIsImportant = b.isImportant || story.isImportant;
+
+                            if (aIsImportant !== bIsImportant) return Number(bIsImportant || false) - Number(aIsImportant || false);
+                            return 0;
+                          }).map(task => (
                             <TaskCard
                               key={task.id}
                               task={task}
@@ -1072,6 +1315,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                               onEdit={handleEditTask}
                               onFocus={setFocusTask}
                               onToggleSubtask={handleToggleSubtask}
+                              onToggleImportant={handleToggleTaskImportant}
                             />
                           ))}
                         </StorySection>
@@ -1079,14 +1323,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                     })}
 
                     {/* Uncategorized Tasks */}
-                    {currentThemeTasks.some(t => !t.storyId) && (
+                    {filteredTasks.some(t => !t.storyId) && (
                       <div className="bg-slate-50/50 rounded-2xl p-2 border border-slate-200/60">
                         <div className="px-2 py-3 flex items-center gap-2">
                           <LayoutList size={16} className="text-slate-400" />
                           <h4 className="font-bold text-slate-700">General Tasks</h4>
                         </div>
                         <div className="space-y-2">
-                          {currentThemeTasks.filter(t => !t.storyId).sort((a, b) => Number(a.completed) - Number(b.completed)).map(task => (
+                          {filteredTasks.filter(t => !t.storyId).sort((a, b) => Number(a.completed) - Number(b.completed)).map(task => (
                             <TaskCard
                               key={task.id}
                               task={task}
@@ -1098,6 +1342,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                               onEdit={handleEditTask}
                               onFocus={setFocusTask}
                               onToggleSubtask={handleToggleSubtask}
+                              onToggleImportant={handleToggleTaskImportant}
                             />
                           ))}
                         </div>
@@ -1112,6 +1357,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
           {/* Right Column: Stats & Breakdown */}
           <div className="space-y-6">
+            {/* Daily Vibe Sidebar Card */}
+            <div className="bg-slate-900 rounded-3xl p-6 text-white relative overflow-hidden shadow-xl transition-all duration-500 min-h-[160px] flex flex-col justify-center">
+              <div className={`absolute top-0 right-0 w-64 h-64 bg-gradient-to-br ${themeStyle.gradientFrom} ${themeStyle.gradientTo} rounded-full mix-blend-overlay filter blur-3xl opacity-40 -translate-y-1/2 translate-x-1/2 transition-colors duration-1000`}></div>
+
+              <div className="relative z-10">
+                <div className={`inline-flex items-center gap-2 mb-3 px-2 py-0.5 rounded-full bg-white/10 backdrop-blur text-[10px] font-bold uppercase tracking-wider border border-white/20`}>
+                  <Sparkles size={10} className="text-yellow-300" />
+                  <span>Daily Vibe</span>
+                </div>
+                <h2 className="text-lg font-display font-light leading-snug italic">
+                  "{quote}"
+                </h2>
+              </div>
+            </div>
+
             <div className={`bg-white p-6 rounded-3xl border ${themeStyle.cardBorder} shadow-sm`}>
               <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
                 <TrendingUp size={18} className={themeStyle.accentColor.replace('text-', 'text-')} /> Focus Areas
@@ -1163,296 +1423,335 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           </div>
         </div>
       </main>
-
       {/* Year Roadmap View (Overlay) */}
-      {isRoadmapOpen && (
-        <YearRoadmap
-          themes={themes}
-          stories={stories}
-          tasks={tasks}
-          currentThemeId={currentThemeId}
-          onSelectTheme={(id) => {
-            setCurrentThemeId(id);
-          }}
-          onAddTheme={() => {
-            setIsRoadmapOpen(false); // Close roadmap to open modal
-            openNewThemeModal();
-          }}
-          onEditTheme={(theme) => {
-            setIsRoadmapOpen(false);
-            handleEditTheme(theme);
-          }}
-          onDeleteTheme={handleDeleteTheme}
-          onToggleComplete={handleToggleThemeComplete}
-          onClose={() => setIsRoadmapOpen(false)}
-        />
-      )}
+
+      {
+        isRoadmapOpen && (
+          <YearRoadmap
+            themes={themes}
+            stories={stories}
+            tasks={tasks}
+            currentThemeId={currentThemeId}
+            onSelectTheme={(id) => {
+              setCurrentThemeId(id);
+            }}
+            onAddTheme={() => {
+              setIsRoadmapOpen(false); // Close roadmap to open modal
+              openNewThemeModal();
+            }}
+            onEditTheme={(theme) => {
+              setIsRoadmapOpen(false);
+              handleEditTheme(theme);
+            }}
+            onDeleteTheme={handleDeleteTheme}
+            onToggleComplete={handleToggleThemeComplete}
+            onClose={() => setIsRoadmapOpen(false)}
+          />
+        )
+      }
 
       {/* Add/Edit Task Modal */}
-      {isTaskModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="flex border-b border-slate-100">
-              <button className={`flex-1 py-4 text-center font-bold text-slate-800 border-b-2 bg-slate-50 ${themeStyle.cardBorder.replace('border-', 'border-b-')}`}>{editingTask ? 'Edit Task' : 'Add Task'}</button>
-            </div>
+      {
+        isTaskModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+              <div className="flex border-b border-slate-100">
+                <button className={`flex-1 py-4 text-center font-bold text-slate-800 border-b-2 bg-slate-50 ${themeStyle.cardBorder.replace('border-', 'border-b-')}`}>{editingTask ? 'Edit Task' : 'Add Task'}</button>
+              </div>
 
-            <div className="p-6 space-y-8">
-              {/* Manual Form */}
-              <form onSubmit={handleManualTaskSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Task Name</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={newTaskTitle}
-                      onChange={(e) => setNewTaskTitle(e.target.value)}
-                      onBlur={() => handleAiAnalyzeTask(newTaskTitle)}
-                      required
-                      placeholder="Review investment portfolio"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none pr-10"
-                    />
-                    {isAnalyzingTask && (
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-600">
-                        <Loader2 className="animate-spin" size={20} />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Story Selection */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Story (Parent Goal)</label>
-                  {!isCreatingNewStory ? (
-                    <div className="flex gap-2">
-                      <select
-                        value={selectedStoryId}
-                        onChange={(e) => setSelectedStoryId(e.target.value)}
-                        className="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none bg-white"
-                      >
-                        <option value="">-- General Task --</option>
-                        {currentThemeStories.map(s => (
-                          <option key={s.id} value={s.id}>{s.title}</option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => setIsCreatingNewStory(true)}
-                        className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 font-bold text-xl"
-                        title="Create New Story"
-                      >
-                        +
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex gap-2 animate-in fade-in slide-in-from-right-2 duration-200">
+              <div className="p-6 space-y-8">
+                {/* Manual Form */}
+                <form onSubmit={handleManualTaskSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Task Name</label>
+                    <div className="relative">
                       <input
                         type="text"
-                        value={newStoryTitle}
-                        onChange={(e) => setNewStoryTitle(e.target.value)}
-                        placeholder="New Story Name (e.g. Home Reno)"
-                        className="flex-1 px-4 py-3 rounded-xl border border-rose-300 ring-2 ring-rose-100 outline-none"
-                        autoFocus
+                        value={newTaskTitle}
+                        onChange={(e) => setNewTaskTitle(e.target.value)}
+                        onBlur={() => handleAiAnalyzeTask(newTaskTitle)}
+                        required
+                        placeholder="Review investment portfolio"
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none pr-10"
                       />
+                      {isAnalyzingTask && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-600">
+                          <Loader2 className="animate-spin" size={20} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Task Description</label>
+                    <textarea
+                      value={newTaskDesc}
+                      onChange={(e) => setNewTaskDesc(e.target.value)}
+                      placeholder="Add details about this task..."
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none resize-none h-20"
+                    />
+                  </div>
+
+                  {/* Story Selection */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Story (Parent Goal)</label>
+                    {!isCreatingNewStory ? (
+                      <div className="flex gap-2">
+                        <select
+                          value={selectedStoryId}
+                          onChange={(e) => setSelectedStoryId(e.target.value)}
+                          className="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none bg-white"
+                        >
+                          <option value="">-- General Task --</option>
+                          {currentThemeStories.map(s => (
+                            <option key={s.id} value={s.id}>{s.title}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setIsCreatingNewStory(true)}
+                          className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 font-bold text-xl"
+                          title="Create New Story"
+                        >
+                          +
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex gap-2 animate-in fade-in slide-in-from-right-2 duration-200">
+                          <input
+                            type="text"
+                            value={newStoryTitle}
+                            onChange={(e) => setNewStoryTitle(e.target.value)}
+                            placeholder="New Story Name (e.g. Home Reno)"
+                            className="flex-1 px-4 py-3 rounded-xl border border-rose-300 ring-2 ring-rose-100 outline-none"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setIsCreatingNewStory(false)}
+                            className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 font-bold"
+                            title="Cancel"
+                          >
+                            <X size={20} />
+                          </button>
+                        </div>
+                        <div className="mt-2 animate-in fade-in slide-in-from-right-2 duration-200">
+                          <textarea
+                            value={newStoryDesc}
+                            onChange={(e) => setNewStoryDesc(e.target.value)}
+                            placeholder="What is this story about? (e.g. Goals, context)"
+                            className="w-full px-4 py-3 rounded-xl border border-rose-300 ring-2 ring-rose-100 outline-none resize-none h-20"
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Category</label>
+                      <select
+                        value={newTaskCategory}
+                        onChange={(e) => setNewTaskCategory(e.target.value as Category)}
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none bg-white"
+                      >
+                        {Object.values(Category).map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Minutes</label>
+                      <input
+                        type="number"
+                        value={newTaskMinutes}
+                        onChange={(e) => setNewTaskMinutes(Number(e.target.value))}
+                        min="5"
+                        step="5"
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Target Deadline</label>
+                    <input
+                      type="datetime-local"
+                      value={newTaskDate}
+                      onChange={(e) => setNewTaskDate(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl">
+                    <input
+                      type="checkbox"
+                      id="isImportant"
+                      checked={newTaskIsImportant}
+                      onChange={(e) => setNewTaskIsImportant(e.target.checked)}
+                      className="w-5 h-5 rounded text-rose-500 focus:ring-rose-500 border-slate-300 transition-all cursor-pointer"
+                    />
+                    <label htmlFor="isImportant" className="text-sm font-bold text-slate-700 cursor-pointer flex items-center gap-2">
+                      <AlertCircle size={16} className="text-amber-500" /> Mark as Important
+                    </label>
+                  </div>
+
+                  {/* Subtasks Section */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-xs font-bold text-slate-500 uppercase">Subtasks</label>
                       <button
                         type="button"
-                        onClick={() => setIsCreatingNewStory(false)}
-                        className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 font-bold"
-                        title="Cancel"
+                        onClick={handleGenerateSubtasksForModal}
+                        disabled={isGeneratingSubtasks || !newTaskTitle}
+                        className="text-xs font-bold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-full flex items-center gap-1 hover:bg-purple-100 transition-colors disabled:opacity-50"
                       >
-                        <X size={20} />
+                        {isGeneratingSubtasks ? <Loader2 className="animate-spin" size={12} /> : <Sparkles size={12} />}
+                        Generate Subtasks
                       </button>
                     </div>
-                  )}
+
+                    {/* Subtasks List */}
+                    <div className="space-y-2 mb-2">
+                      {newSubtasks.map((subtask, index) => (
+                        <div key={subtask.id} className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl group">
+                          <Circle size={14} className="text-slate-300 flex-shrink-0" />
+                          <input
+                            type="text"
+                            value={subtask.title}
+                            onChange={(e) => {
+                              const updated = [...newSubtasks];
+                              updated[index] = { ...subtask, title: e.target.value };
+                              setNewSubtasks(updated);
+                            }}
+                            className="flex-1 bg-transparent border-none outline-none text-sm text-slate-700"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewSubtasks(newSubtasks.filter((_, i) => i !== index));
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-opacity"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Add Subtask Input */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewSubtasks([...newSubtasks, { id: crypto.randomUUID(), title: '', completed: false }]);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl transition-colors flex items-center gap-2"
+                    >
+                      <Plus size={14} /> Add subtask
+                    </button>
+                  </div>
+
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => setIsTaskModalOpen(false)}
+                      className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className={`flex-1 py-3 text-white font-bold rounded-xl shadow-lg transition-colors bg-gradient-to-r ${themeStyle.gradientFrom} ${themeStyle.gradientTo}`}
+                    >
+                      {editingTask ? 'Update Task' : 'Add Task'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Add/Edit Theme Modal */}
+      {
+        isThemeModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+              <div className="bg-slate-900 p-6 text-white">
+                <h2 className="text-2xl font-display font-bold">{editingTheme ? 'Edit Era' : 'Define Your Next Era'}</h2>
+                <p className="text-slate-400 text-sm">{editingTheme ? 'Update the details of this chapter.' : 'Create a new chapter for 2026.'}</p>
+              </div>
+
+              <form onSubmit={handleThemeSubmit} className="p-6 space-y-5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Era Name</label>
+                  <input
+                    type="text"
+                    value={newThemeTitle}
+                    onChange={(e) => setNewThemeTitle(e.target.value)}
+                    required
+                    placeholder="e.g. Winter Arc, Soft Girl Spring, CEO Summer"
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-slate-800 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">The Vibe (for AI Styling)</label>
+                  <textarea
+                    value={newThemeDesc}
+                    onChange={(e) => setNewThemeDesc(e.target.value)}
+                    required
+                    placeholder="Describe the energy. e.g. 'Intense focus, waking up early, dark mode vibes' or 'Playful, colorful, energetic travel'."
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-slate-800 outline-none resize-none h-24"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Changing the vibe will regenerate the color theme.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Category</label>
-                    <select
-                      value={newTaskCategory}
-                      onChange={(e) => setNewTaskCategory(e.target.value as Category)}
-                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none bg-white"
-                    >
-                      {Object.values(Category).map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Minutes</label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Start Date</label>
                     <input
-                      type="number"
-                      value={newTaskMinutes}
-                      onChange={(e) => setNewTaskMinutes(Number(e.target.value))}
-                      min="5"
-                      step="5"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none"
+                      type="date"
+                      value={newThemeStart}
+                      onChange={(e) => setNewThemeStart(e.target.value)}
+                      required
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-slate-800 outline-none"
                     />
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Target Deadline</label>
-                  <input
-                    type="datetime-local"
-                    value={newTaskDate}
-                    onChange={(e) => setNewTaskDate(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none"
-                  />
-                </div>
-
-                {/* Subtasks Section */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-xs font-bold text-slate-500 uppercase">Subtasks</label>
-                    <button
-                      type="button"
-                      onClick={handleGenerateSubtasksForModal}
-                      disabled={isGeneratingSubtasks || !newTaskTitle}
-                      className="text-xs font-bold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-full flex items-center gap-1 hover:bg-purple-100 transition-colors disabled:opacity-50"
-                    >
-                      {isGeneratingSubtasks ? <Loader2 className="animate-spin" size={12} /> : <Sparkles size={12} />}
-                      Generate Subtasks
-                    </button>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">End Date</label>
+                    <input
+                      type="date"
+                      value={newThemeEnd}
+                      onChange={(e) => setNewThemeEnd(e.target.value)}
+                      required
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-slate-800 outline-none"
+                    />
                   </div>
-
-                  {/* Subtasks List */}
-                  <div className="space-y-2 mb-2">
-                    {newSubtasks.map((subtask, index) => (
-                      <div key={subtask.id} className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl group">
-                        <Circle size={14} className="text-slate-300 flex-shrink-0" />
-                        <input
-                          type="text"
-                          value={subtask.title}
-                          onChange={(e) => {
-                            const updated = [...newSubtasks];
-                            updated[index] = { ...subtask, title: e.target.value };
-                            setNewSubtasks(updated);
-                          }}
-                          className="flex-1 bg-transparent border-none outline-none text-sm text-slate-700"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setNewSubtasks(newSubtasks.filter((_, i) => i !== index));
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-opacity"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Add Subtask Input */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewSubtasks([...newSubtasks, { id: crypto.randomUUID(), title: '', completed: false }]);
-                    }}
-                    className="w-full text-left px-3 py-2 text-sm text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl transition-colors flex items-center gap-2"
-                  >
-                    <Plus size={14} /> Add subtask
-                  </button>
                 </div>
 
                 <div className="flex gap-3 pt-4">
                   <button
                     type="button"
-                    onClick={() => setIsTaskModalOpen(false)}
+                    onClick={() => setIsThemeModalOpen(false)}
                     className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className={`flex-1 py-3 text-white font-bold rounded-xl shadow-lg transition-colors bg-gradient-to-r ${themeStyle.gradientFrom} ${themeStyle.gradientTo}`}
+                    disabled={isGeneratingTheme}
+                    className="flex-1 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors shadow-lg flex items-center justify-center gap-2"
                   >
-                    {editingTask ? 'Update Task' : 'Add Task'}
+                    {isGeneratingTheme ? <Loader2 className="animate-spin" /> : (editingTheme ? 'Update Era' : 'Create Era')}
                   </button>
                 </div>
               </form>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Add/Edit Theme Modal */}
-      {isThemeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="bg-slate-900 p-6 text-white">
-              <h2 className="text-2xl font-display font-bold">{editingTheme ? 'Edit Era' : 'Define Your Next Era'}</h2>
-              <p className="text-slate-400 text-sm">{editingTheme ? 'Update the details of this chapter.' : 'Create a new chapter for 2026.'}</p>
-            </div>
-
-            <form onSubmit={handleThemeSubmit} className="p-6 space-y-5">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Era Name</label>
-                <input
-                  type="text"
-                  value={newThemeTitle}
-                  onChange={(e) => setNewThemeTitle(e.target.value)}
-                  required
-                  placeholder="e.g. Winter Arc, Soft Girl Spring, CEO Summer"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-slate-800 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">The Vibe (for AI Styling)</label>
-                <textarea
-                  value={newThemeDesc}
-                  onChange={(e) => setNewThemeDesc(e.target.value)}
-                  required
-                  placeholder="Describe the energy. e.g. 'Intense focus, waking up early, dark mode vibes' or 'Playful, colorful, energetic travel'."
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-slate-800 outline-none resize-none h-24"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Changing the vibe will regenerate the color theme.</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Start Date</label>
-                  <input
-                    type="date"
-                    value={newThemeStart}
-                    onChange={(e) => setNewThemeStart(e.target.value)}
-                    required
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-slate-800 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">End Date</label>
-                  <input
-                    type="date"
-                    value={newThemeEnd}
-                    onChange={(e) => setNewThemeEnd(e.target.value)}
-                    required
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-slate-800 outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsThemeModalOpen(false)}
-                  className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isGeneratingTheme}
-                  className="flex-1 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors shadow-lg flex items-center justify-center gap-2"
-                >
-                  {isGeneratingTheme ? <Loader2 className="animate-spin" /> : (editingTheme ? 'Update Era' : 'Create Era')}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 };
 
