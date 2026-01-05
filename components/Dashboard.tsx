@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { UserProfile, Task, Category, ChartData, Theme, ThemeStyle, Story } from '../types';
 import { getTasks, saveTasks, getThemes, saveThemes, getStories, saveStories, deleteTask as apiDeleteTask, deleteTheme as apiDeleteTheme, deleteStory as apiDeleteStory } from '../services/storage';
 import { generateSubtasks, getMotivationalQuote, generateThemeStyle } from '../services/gemini';
-import { Plus, Trash2, CheckCircle2, Circle, Loader2, LogOut, Sparkles, TrendingUp, Target, Clock, AlertCircle, Calendar, Map, LayoutList, FolderKanban, BookOpen, X } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, Circle, Loader2, LogOut, Sparkles, TrendingUp, Target, Clock, AlertCircle, Calendar, Map, LayoutList, FolderKanban, BookOpen, X, Pencil } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import CalendarButton from './CalendarButton';
 import FocusMode from './FocusMode';
@@ -60,6 +60,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [isGeneratingTheme, setIsGeneratingTheme] = useState(false);
 
   // New Task State
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskCategory, setNewTaskCategory] = useState<Category>(Category.CAREER);
   const [newTaskMinutes, setNewTaskMinutes] = useState(30);
@@ -304,6 +305,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     // loadData();
   };
 
+  const handleEditTask = (task: Task) => {
+    setEditingTask(task);
+    setNewTaskTitle(task.title);
+    setNewTaskCategory(task.category);
+    setNewTaskMinutes(task.estimatedMinutes);
+    setNewTaskDate(task.dueDate);
+    setSelectedStoryId(task.storyId || '');
+    setIsCreatingNewStory(false);
+    setNewStoryTitle('');
+    setIsTaskModalOpen(true);
+  };
+
   const handleManualTaskSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle) return;
@@ -323,9 +336,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       finalStoryId = newStory.id;
     }
 
-    addTask(newTaskTitle, newTaskCategory, newTaskMinutes, newTaskDate, finalStoryId || undefined);
+    if (editingTask) {
+      const updatedTask: Task = {
+        ...editingTask,
+        title: newTaskTitle,
+        category: newTaskCategory,
+        estimatedMinutes: newTaskMinutes,
+        dueDate: newTaskDate,
+        storyId: finalStoryId || undefined,
+      };
+      setTasks(prev => prev.map(t => t.id === editingTask.id ? updatedTask : t));
+      await saveTasks(user.email, [updatedTask]);
+    } else {
+      addTask(newTaskTitle, newTaskCategory, newTaskMinutes, newTaskDate, finalStoryId || undefined);
+    }
     
     // Reset
+    setEditingTask(null);
     setNewTaskTitle('');
     setSelectedStoryId('');
     setIsCreatingNewStory(false);
@@ -530,6 +557,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             </button>
           )}
           <CalendarButton task={task} />
+          <button 
+            onClick={() => handleEditTask(task)} 
+            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors"
+            title="Edit Task"
+          >
+            <Pencil size={18} />
+          </button>
           <button onClick={() => deleteTask(task.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
             <Trash2 size={18} />
           </button>
@@ -628,6 +662,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                 if (currentTheme.completed) {
                    alert("This era is completed! Re-open it in the Roadmap to add more tasks.");
                 } else {
+                   setEditingTask(null);
+                   setNewTaskTitle('');
+                   setNewTaskCategory(Category.CAREER);
+                   setNewTaskMinutes(30);
+                   const now = new Date();
+                   now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                   setNewTaskDate(now.toISOString().slice(0, 16));
+                   
                    setIsTaskModalOpen(true);
                    setIsCreatingNewStory(false); // Reset default state
                    setSelectedStoryId('');
@@ -815,7 +857,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="flex border-b border-slate-100">
-              <button className={`flex-1 py-4 text-center font-bold text-slate-800 border-b-2 bg-slate-50 ${themeStyle.cardBorder.replace('border-', 'border-b-')}`}>Add Task</button>
+              <button className={`flex-1 py-4 text-center font-bold text-slate-800 border-b-2 bg-slate-50 ${themeStyle.cardBorder.replace('border-', 'border-b-')}`}>{editingTask ? 'Edit Task' : 'Add Task'}</button>
             </div>
             
             <div className="p-6 space-y-8">
@@ -948,7 +990,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                     type="submit" 
                     className={`flex-1 py-3 text-white font-bold rounded-xl shadow-lg transition-colors bg-gradient-to-r ${themeStyle.gradientFrom} ${themeStyle.gradientTo}`}
                   >
-                    Add Task
+                    {editingTask ? 'Update Task' : 'Add Task'}
                   </button>
                 </div>
               </form>
