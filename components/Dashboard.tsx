@@ -564,14 +564,36 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     await saveTasks(user.email, [updatedTask]);
   };
 
+  const handleEditSubtask = async (taskId: string, subtaskId: string, newTitle: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const updatedSubtasks = (task.subtasks || []).map(st =>
+      st.id === subtaskId ? { ...st, title: newTitle } : st
+    );
+
+    const updatedTask = { ...task, subtasks: updatedSubtasks };
+
+    // Optimistic Update
+    setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+
+    // Save to DB
+    await saveTasks(user.email, [updatedTask]);
+  };
+
   const handleGenerateChecklist = async (taskId: string) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
+    // Find context
+    const story = stories.find(s => s.id === task.storyId);
+
     // Optimistic UI for loading state could be added here if needed
     // For now we'll just try to fetch
     try {
-      const checklist = await generateTaskChecklist(task.title);
+      // AI Call with context
+      const checklist = await generateTaskChecklist(task.title, task.category, story?.title);
+
       const newSubtasks = checklist.map((item: any) => ({
         id: crypto.randomUUID(),
         title: item.title,
@@ -936,6 +958,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                         onFocus={setFocusTask}
                         onToggleSubtask={handleToggleSubtask}
                         onAddSubtask={handleAddSubtask}
+                        onEditSubtask={handleEditSubtask}
                         onGenerateChecklist={handleGenerateChecklist}
                       />
                     ))}

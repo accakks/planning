@@ -14,6 +14,7 @@ interface TaskCardProps {
     onFocus: (task: Task) => void;
     onToggleSubtask: (taskId: string, subtaskId: string) => void;
     onAddSubtask: (taskId: string, title: string) => void;
+    onEditSubtask: (taskId: string, subtaskId: string, newTitle: string) => void;
     onGenerateChecklist: (taskId: string) => void;
 }
 
@@ -57,12 +58,28 @@ const TaskCard: React.FC<TaskCardProps> = ({
     onFocus,
     onToggleSubtask,
     onAddSubtask,
+    onEditSubtask,
     onGenerateChecklist
 }) => {
     const status = getTaskStatus(task);
     const parentStory = stories.find(s => s.id === task.storyId);
     const [isExpanded, setIsExpanded] = useState(false);
     const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+    const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
+    const [editSubtaskTitle, setEditSubtaskTitle] = useState('');
+
+    const startEditingSubtask = (id: string, currentTitle: string) => {
+        setEditingSubtaskId(id);
+        setEditSubtaskTitle(currentTitle);
+    };
+
+    const saveEditingSubtask = (taskId: string, subtaskId: string) => {
+        if (editSubtaskTitle.trim()) {
+            onEditSubtask(taskId, subtaskId, editSubtaskTitle);
+        }
+        setEditingSubtaskId(null);
+        setEditSubtaskTitle('');
+    };
 
     const completedSubtasks = (task.subtasks || []).filter(st => st.completed).length;
     const totalSubtasks = (task.subtasks || []).length;
@@ -137,16 +154,41 @@ const TaskCard: React.FC<TaskCardProps> = ({
                     {isExpanded && (
                         <div className="mt-3 pl-2 border-l-2 border-slate-100 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
                             {(task.subtasks || []).map(st => (
-                                <div key={st.id} className="flex items-center gap-2 group/sub">
+                                <div key={st.id} className="flex items-center gap-2 group/sub min-h-[28px]">
                                     <button
                                         onClick={() => onToggleSubtask(task.id, st.id)}
-                                        className={`text-slate-300 hover:text-slate-500 ${st.completed ? 'text-green-500' : ''}`}
+                                        className={`flex-shrink-0 text-slate-300 hover:text-slate-500 ${st.completed ? 'text-green-500' : ''}`}
                                     >
                                         {st.completed ? <CheckCircle2 size={16} /> : <Circle size={16} />}
                                     </button>
-                                    <span className={`text-sm ${st.completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
-                                        {st.title}
-                                    </span>
+
+                                    {editingSubtaskId === st.id ? (
+                                        <input
+                                            type="text"
+                                            value={editSubtaskTitle}
+                                            onChange={(e) => setEditSubtaskTitle(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') saveEditingSubtask(task.id, st.id);
+                                                if (e.key === 'Escape') setEditingSubtaskId(null);
+                                            }}
+                                            onBlur={() => saveEditingSubtask(task.id, st.id)}
+                                            autoFocus
+                                            className="flex-1 text-sm bg-slate-50 px-2 py-0.5 rounded border border-slate-200 outline-none focus:border-purple-300"
+                                        />
+                                    ) : (
+                                        <>
+                                            <span className={`flex-1 text-sm truncate ${st.completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                                                {st.title}
+                                            </span>
+                                            <button
+                                                onClick={() => startEditingSubtask(st.id, st.title)}
+                                                className="opacity-0 group-hover/sub:opacity-100 p-1 text-slate-300 hover:text-slate-500 transition-opacity"
+                                                title="Edit step"
+                                            >
+                                                <Pencil size={12} />
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             ))}
 

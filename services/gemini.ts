@@ -74,10 +74,14 @@ export const generateSubtasks = async (goal: string): Promise<Partial<Task>[]> =
   }
 };
 
-export const generateTaskChecklist = async (taskTitle: string): Promise<any[]> => {
+export const generateTaskChecklist = async (taskTitle: string, category: string, storyContext?: string): Promise<any[]> => {
   const prompt = `
     I have a task: "${taskTitle}".
+    Category: ${category}
+    ${storyContext ? `Context/Goal: ${storyContext}` : ''}
+    
     Please break this down into 3-5 sub-steps to complete it.
+    The steps should be specific to the context.
     Return ONLY a valid JSON array of objects with the following structure:
     [
       { "title": "Subtask title", "completed": false }
