@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserProfile, Task, Category, ChartData, Theme, ThemeStyle, Story } from '../types';
 import { getTasks, saveTasks, getThemes, saveThemes, getStories, saveStories, deleteTask as apiDeleteTask, deleteTheme as apiDeleteTheme, deleteStory as apiDeleteStory } from '../services/storage';
-import { generateSubtasks, getMotivationalQuote, generateThemeStyle, generateTaskChecklist } from '../services/gemini';
+import { generateSubtasks, getMotivationalQuote, generateThemeStyle, generateTaskChecklist, analyzeTask } from '../services/gemini';
 import { Plus, Trash2, CheckCircle2, Circle, Loader2, LogOut, Sparkles, TrendingUp, Target, Clock, AlertCircle, Calendar, Map, LayoutList, FolderKanban, BookOpen, X, Pencil, ChevronDown, ChevronUp } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import CalendarButton from './CalendarButton';
@@ -117,6 +117,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
   const [aiPrompt, setAiPrompt] = useState('');
   const [isGeneratingTasks, setIsGeneratingTasks] = useState(false);
+  const [isAnalyzingTask, setIsAnalyzingTask] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
 
   const openAddTaskModal = (storyId?: string) => {
@@ -252,7 +253,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
     const data: ChartData[] = Object.values(Category).map(cat => ({
       name: cat,
-      value: currentThemeTasks.filter(t => t.category === cat).length,
+      value: currentThemeTasks
+        .filter(t => t.category === cat)
+        .reduce((sum, task) => sum + (task.estimatedMinutes || 0), 0),
       fill: CATEGORY_COLORS[cat]
     })).filter(d => d.value > 0);
 
@@ -486,6 +489,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       alert("Oops! Couldn't generate tasks right now. Try again.");
     } finally {
       setIsGeneratingTasks(false);
+    }
+  };
+
+  const handleAiAnalyzeTask = async () => {
+    if (!newTaskTitle) return;
+    setIsAnalyzingTask(true);
+    try {
+      const result = await analyzeTask(newTaskTitle, stories);
+
+      setNewTaskMinutes(result.estimatedMinutes);
+      setNewTaskCategory(result.category);
+      if (result.storyId) {
+        setSelectedStoryId(result.storyId);
+      }
+    } catch (error) {
+      console.error("Failed to analyze task", error);
+    } finally {
+      setIsAnalyzingTask(false);
     }
   };
 
@@ -1147,14 +1168,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
               <form onSubmit={handleManualTaskSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Task Name</label>
-                  <input
-                    type="text"
-                    value={newTaskTitle}
-                    onChange={(e) => setNewTaskTitle(e.target.value)}
-                    required
-                    placeholder="Review investment portfolio"
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newTaskTitle}
+                      onChange={(e) => setNewTaskTitle(e.target.value)}
+                      required
+                      placeholder="Review investment portfolio"
+                      className="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAiAnalyzeTask}
+                      disabled={isAnalyzingTask || !newTaskTitle}
+                      className="px-4 py-3 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-colors disabled:opacity-50"
+                      title="Auto-estimate Category & Time"
+                    >
+                      {isAnalyzingTask ? <Loader2 className="animate-spin" size={20} /> : <Sparkles size={20} />}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Story Selection */}

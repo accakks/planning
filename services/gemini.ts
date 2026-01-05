@@ -187,6 +187,56 @@ export const generateThemeStyle = async (description: string): Promise<ThemeStyl
   }
 }
 
+
+export const analyzeTask = async (taskTitle: string, existingStories: { id: string; title: string }[]): Promise<{
+  estimatedMinutes: number;
+  category: Category;
+  storyId?: string;
+}> => {
+  const storiesContext = existingStories.map(s => `- ID: ${s.id}, Title: ${s.title}`).join('\n');
+
+  const prompt = `
+    I have a task: "${taskTitle}".
+    
+    1. Estimate the time (in minutes) for this task. Be realistic.
+    2. Assign a category from this list: Career, Health, Finance, Lifestyle, Travel, Personal.
+    3. Match it to the most relevant Story ID from this list (if any fit well):
+    ${storiesContext}
+    
+    If no story fits, return null for storyId.
+    
+    Return ONLY valid JSON with no markdown:
+    {
+      "estimatedMinutes": 30,
+      "category": "Career",
+      "storyId": "uuid-string-or-null"
+    }
+  `;
+
+  try {
+    const response = await callGeminiProxy({
+      prompt: prompt,
+      config: {
+        responseMimeType: "application/json"
+      }
+    });
+
+    let text = response.text;
+    if (text && text.includes('```json')) {
+      text = text.replace(/```json/g, '').replace(/```/g, '');
+    }
+
+    if (text) {
+      return JSON.parse(text);
+    }
+    // Fallback
+    return { estimatedMinutes: 30, category: Category.PERSONAL };
+  } catch (error) {
+    console.error("Failed to analyze task:", error);
+    return { estimatedMinutes: 30, category: Category.PERSONAL };
+  }
+};
+
 // --- Copilot Logic ---
 
 export const getCopilotSystemInstruction = (user: UserProfile, currentTheme: Theme, tasks: Task[]) => {
