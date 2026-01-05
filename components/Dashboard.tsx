@@ -118,6 +118,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [aiPrompt, setAiPrompt] = useState('');
   const [isGeneratingTasks, setIsGeneratingTasks] = useState(false);
   const [isAnalyzingTask, setIsAnalyzingTask] = useState(false);
+  const [lastAnalyzedTitle, setLastAnalyzedTitle] = useState('');
+  const [newSubtasks, setNewSubtasks] = useState<{ id: string; title: string; completed: boolean }[]>([]);
+  const [isGeneratingSubtasks, setIsGeneratingSubtasks] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
 
   const openAddTaskModal = (storyId?: string) => {
@@ -136,6 +139,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     setIsTaskModalOpen(true);
     setIsCreatingNewStory(false);
     setSelectedStoryId(storyId || '');
+    setNewSubtasks([]);
   };
 
   // Load Data
@@ -390,6 +394,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     setSelectedStoryId(task.storyId || '');
     setIsCreatingNewStory(false);
     setNewStoryTitle('');
+    setNewSubtasks(task.subtasks || []);
     setIsTaskModalOpen(true);
   };
 
@@ -420,11 +425,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         estimatedMinutes: newTaskMinutes,
         dueDate: newTaskDate,
         storyId: finalStoryId || undefined,
+        subtasks: newSubtasks,
       };
       setTasks(prev => prev.map(t => t.id === editingTask.id ? updatedTask : t));
       await saveTasks(user.email, [updatedTask]);
     } else {
-      addTask(newTaskTitle, newTaskCategory, newTaskMinutes, newTaskDate, finalStoryId || undefined);
+      const newTask: Task = {
+        id: crypto.randomUUID(),
+        themeId: currentThemeId,
+        storyId: finalStoryId || undefined,
+        title: newTaskTitle,
+        category: newTaskCategory,
+        estimatedMinutes: newTaskMinutes,
+        dueDate: newTaskDate,
+        completed: false,
+        subtasks: newSubtasks,
+      };
+      setTasks(prev => [...prev, newTask]);
+      await saveTasks(user.email, [newTask]);
     }
 
     // Reset
@@ -433,6 +451,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     setSelectedStoryId('');
     setIsCreatingNewStory(false);
     setNewStoryTitle('');
+    setNewSubtasks([]);
     setIsTaskModalOpen(false);
   };
 
@@ -492,11 +511,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     }
   };
 
-  const handleAiAnalyzeTask = async () => {
-    if (!newTaskTitle) return;
+  const handleAiAnalyzeTask = async (taskTitle: string) => {
+    // Only analyze if title is long enough and hasn't been analyzed yet
+    if (!taskTitle || taskTitle.length <= 4 || taskTitle === lastAnalyzedTitle) return;
+
     setIsAnalyzingTask(true);
+    setLastAnalyzedTitle(taskTitle);
+
     try {
-      const result = await analyzeTask(newTaskTitle, stories);
+      const result = await analyzeTask(taskTitle, stories);
 
       setNewTaskMinutes(result.estimatedMinutes);
       setNewTaskCategory(result.category);
@@ -507,6 +530,46 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       console.error("Failed to analyze task", error);
     } finally {
       setIsAnalyzingTask(false);
+    }
+  };
+
+  // Debounced effect to trigger AI analysis
+  useEffect(() => {
+    if (!isTaskModalOpen || editingTask) return; // Only for new tasks
+
+    const timer = setTimeout(() => {
+      handleAiAnalyzeTask(newTaskTitle);
+    }, 1500); // 1.5 second delay
+
+    return () => clearTimeout(timer);
+  }, [newTaskTitle, isTaskModalOpen, editingTask]);
+
+
+  const handleGenerateSubtasksForModal = async () => {
+    if (!newTaskTitle) return;
+    setIsGeneratingSubtasks(true);
+    try {
+      const storyContext = selectedStoryId
+        ? stories.find(s => s.id === selectedStoryId)?.title
+        : undefined;
+      const generatedSubtasks = await generateTaskChecklist(
+        newTaskTitle,
+        newTaskCategory,
+        storyContext
+      );
+
+      // Map to include id and completed fields
+      const subtasksWithIds = generatedSubtasks.map((st: any) => ({
+        id: crypto.randomUUID(),
+        title: st.title,
+        completed: false,
+      }));
+
+      setNewSubtasks(subtasksWithIds);
+    } catch (error) {
+      console.error("Failed to generate subtasks", error);
+    } finally {
+      setIsGeneratingSubtasks(false);
     }
   };
 
@@ -978,9 +1041,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                         onEdit={handleEditTask}
                         onFocus={setFocusTask}
                         onToggleSubtask={handleToggleSubtask}
-                        onAddSubtask={handleAddSubtask}
-                        onEditSubtask={handleEditSubtask}
-                        onGenerateChecklist={handleGenerateChecklist}
                       />
                     ))}
                   </div>
@@ -1012,8 +1072,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                               onEdit={handleEditTask}
                               onFocus={setFocusTask}
                               onToggleSubtask={handleToggleSubtask}
-                              onAddSubtask={handleAddSubtask}
-                              onGenerateChecklist={handleGenerateChecklist}
                             />
                           ))}
                         </StorySection>
@@ -1040,8 +1098,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                               onEdit={handleEditTask}
                               onFocus={setFocusTask}
                               onToggleSubtask={handleToggleSubtask}
-                              onAddSubtask={handleAddSubtask}
-                              onGenerateChecklist={handleGenerateChecklist}
                             />
                           ))}
                         </div>
@@ -1141,51 +1197,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             </div>
 
             <div className="p-6 space-y-8">
-              {/* AI Section */}
-              <div className={`p-4 rounded-2xl border ${themeStyle.bgOverlay} ${themeStyle.cardBorder}`}>
-                <label className={`flex items-center gap-2 font-bold mb-2 ${themeStyle.accentColor}`}>
-                  <Sparkles size={16} /> AI Breakdown
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={aiPrompt}
-                    onChange={(e) => setAiPrompt(e.target.value)}
-                    placeholder="e.g., 'Plan a solo trip to Japan'"
-                    className="flex-1 px-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-300 outline-none text-sm"
-                  />
-                  <button
-                    onClick={handleAiTaskGenerate}
-                    disabled={isGeneratingTasks || !aiPrompt}
-                    className={`text-white px-4 py-2 rounded-xl font-medium text-sm disabled:opacity-50 flex items-center gap-2 bg-slate-900`}
-                  >
-                    {isGeneratingTasks ? <Loader2 className="animate-spin" size={16} /> : 'Magic'}
-                  </button>
-                </div>
-              </div>
-
               {/* Manual Form */}
               <form onSubmit={handleManualTaskSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Task Name</label>
-                  <div className="flex gap-2">
+                  <div className="relative">
                     <input
                       type="text"
                       value={newTaskTitle}
                       onChange={(e) => setNewTaskTitle(e.target.value)}
+                      onBlur={() => handleAiAnalyzeTask(newTaskTitle)}
                       required
                       placeholder="Review investment portfolio"
-                      className="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none pr-10"
                     />
-                    <button
-                      type="button"
-                      onClick={handleAiAnalyzeTask}
-                      disabled={isAnalyzingTask || !newTaskTitle}
-                      className="px-4 py-3 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-colors disabled:opacity-50"
-                      title="Auto-estimate Category & Time"
-                    >
-                      {isAnalyzingTask ? <Loader2 className="animate-spin" size={20} /> : <Sparkles size={20} />}
-                    </button>
+                    {isAnalyzingTask && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-600">
+                        <Loader2 className="animate-spin" size={20} />
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1267,6 +1297,61 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                     onChange={(e) => setNewTaskDate(e.target.value)}
                     className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none"
                   />
+                </div>
+
+                {/* Subtasks Section */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-bold text-slate-500 uppercase">Subtasks</label>
+                    <button
+                      type="button"
+                      onClick={handleGenerateSubtasksForModal}
+                      disabled={isGeneratingSubtasks || !newTaskTitle}
+                      className="text-xs font-bold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-full flex items-center gap-1 hover:bg-purple-100 transition-colors disabled:opacity-50"
+                    >
+                      {isGeneratingSubtasks ? <Loader2 className="animate-spin" size={12} /> : <Sparkles size={12} />}
+                      Generate Subtasks
+                    </button>
+                  </div>
+
+                  {/* Subtasks List */}
+                  <div className="space-y-2 mb-2">
+                    {newSubtasks.map((subtask, index) => (
+                      <div key={subtask.id} className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl group">
+                        <Circle size={14} className="text-slate-300 flex-shrink-0" />
+                        <input
+                          type="text"
+                          value={subtask.title}
+                          onChange={(e) => {
+                            const updated = [...newSubtasks];
+                            updated[index] = { ...subtask, title: e.target.value };
+                            setNewSubtasks(updated);
+                          }}
+                          className="flex-1 bg-transparent border-none outline-none text-sm text-slate-700"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewSubtasks(newSubtasks.filter((_, i) => i !== index));
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-opacity"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Add Subtask Input */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewSubtasks([...newSubtasks, { id: crypto.randomUUID(), title: '', completed: false }]);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl transition-colors flex items-center gap-2"
+                  >
+                    <Plus size={14} /> Add subtask
+                  </button>
                 </div>
 
                 <div className="flex gap-3 pt-4">
