@@ -504,30 +504,30 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     return (
       <div 
         key={task.id} 
-        className={`group bg-white p-4 rounded-2xl border transition-all duration-200 flex items-center gap-4 hover:shadow-md 
+        className={`group bg-white p-4 rounded-2xl border transition-all duration-200 flex items-start gap-4 hover:shadow-md 
           ${task.completed ? 'border-slate-100 opacity-60' : 'border-slate-200'}
           ${status === 'overdue' && !task.completed ? 'border-l-4 border-l-rose-500' : ''}
           ${status === 'soon' && !task.completed ? 'border-l-4 border-l-amber-400' : ''}
         `}
       >
-        <button onClick={() => toggleTask(task.id)} className={`flex-shrink-0 ${task.completed ? 'text-green-500' : `text-slate-300 hover:${themeStyle.accentColor}`}`}>
+        <button onClick={() => toggleTask(task.id)} className={`flex-shrink-0 mt-1 ${task.completed ? 'text-green-500' : `text-slate-300 hover:${themeStyle.accentColor}`}`}>
           {task.completed ? <CheckCircle2 size={24} className="fill-green-100" /> : <Circle size={24} />}
         </button>
         
         <div className="flex-1 min-w-0">
-          <div className="flex justify-between items-start">
-            <div className="flex flex-col">
+          <div className="flex justify-between items-start gap-2">
+            <div className="flex flex-col min-w-0 flex-1">
               {/* Show Story Badge in List View */}
               {viewMode === 'list' && parentStory && (
                 <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1 mb-0.5">
                    <BookOpen size={10} /> {parentStory.title}
                 </span>
               )}
-              <h4 className={`font-semibold truncate pr-2 ${task.completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.title}</h4>
+              <h4 className={`font-semibold truncate ${task.completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.title}</h4>
             </div>
             
             {!task.completed && (
-               <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1
+               <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1 flex-shrink-0
                  ${status === 'overdue' ? 'bg-rose-100 text-rose-600' : 
                    status === 'soon' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
                  {status === 'overdue' && <AlertCircle size={10} />}
@@ -544,9 +544,37 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             <span>{task.estimatedMinutes}m</span>
             {task.description && <span className="hidden sm:inline">• {task.description}</span>}
           </div>
+
+          {/* Mobile Actions (Always Visible) */}
+          <div className="flex sm:hidden items-center gap-4 mt-3 pt-3 border-t border-slate-100">
+             {!task.completed && (
+              <button 
+                onClick={() => setFocusTask(task)}
+                className={`flex items-center gap-1 text-xs font-bold ${themeStyle.accentColor}`}
+              >
+                <Target size={16} /> Focus
+              </button>
+            )}
+            <div className="scale-90 origin-left">
+              <CalendarButton task={task} />
+            </div>
+            <button 
+              onClick={() => handleEditTask(task)} 
+              className="flex items-center gap-1 text-xs font-bold text-slate-400"
+            >
+              <Pencil size={16} /> Edit
+            </button>
+            <button 
+              onClick={() => deleteTask(task.id)} 
+              className="flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-red-500"
+            >
+              <Trash2 size={16} /> Delete
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Desktop Actions (Hover Only) */}
+        <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           {!task.completed && (
             <button 
               onClick={() => setFocusTask(task)}
