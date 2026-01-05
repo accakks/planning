@@ -35,6 +35,45 @@ const DEFAULT_STYLE: ThemeStyle = {
   cardBorder: 'border-rose-200'
 };
 
+
+const StorySection = ({ story, taskCount, onAddTask, children }: { story: Story, taskCount: number, onAddTask: () => void, children: React.ReactNode }) => {
+  const [isExpanded, setIsExpanded] = useState(true);
+
+  return (
+    <div className="group bg-slate-50/50 rounded-2xl p-2 border border-slate-200/60 transition-all duration-300 hover:border-slate-300">
+      <div
+        className="px-2 py-3 flex items-center justify-between cursor-pointer select-none rounded-xl hover:bg-slate-100/50 transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex items-center gap-2">
+          <button className="text-slate-400 transition-transform duration-200">
+            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+          <BookOpen size={16} className="text-slate-400" />
+          <h4 className="font-bold text-slate-700">{story.title}</h4>
+          <span className="text-xs text-slate-400">({taskCount})</span>
+        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onAddTask();
+          }}
+          className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-900 rounded-lg transition-all shadow-sm opacity-0 group-hover:opacity-100 focus:opacity-100 sm:opacity-100"
+          title="Add Task to this Story"
+        >
+          <Plus size={16} />
+        </button>
+      </div>
+
+      {isExpanded && (
+        <div className="space-y-2 mt-1 animate-in slide-in-from-top-1 fade-in duration-200">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [themes, setThemes] = useState<Theme[]>([]);
   const [stories, setStories] = useState<Story[]>([]);
@@ -79,6 +118,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [aiPrompt, setAiPrompt] = useState('');
   const [isGeneratingTasks, setIsGeneratingTasks] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
+
+  const openAddTaskModal = (storyId?: string) => {
+    if (currentTheme.completed) {
+      alert("This era is completed! Re-open it in the Roadmap to add more tasks.");
+      return;
+    }
+    setEditingTask(null);
+    setNewTaskTitle('');
+    setNewTaskCategory(Category.CAREER);
+    setNewTaskMinutes(30);
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    setNewTaskDate(now.toISOString().slice(0, 16));
+
+    setIsTaskModalOpen(true);
+    setIsCreatingNewStory(false);
+    setSelectedStoryId(storyId || '');
+  };
 
   // Load Data
   const loadData = async (isBackground = false) => {
@@ -810,23 +867,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             </div>
             {/* Disable adding tasks if theme is completed */}
             <button
-              onClick={() => {
-                if (currentTheme.completed) {
-                  alert("This era is completed! Re-open it in the Roadmap to add more tasks.");
-                } else {
-                  setEditingTask(null);
-                  setNewTaskTitle('');
-                  setNewTaskCategory(Category.CAREER);
-                  setNewTaskMinutes(30);
-                  const now = new Date();
-                  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-                  setNewTaskDate(now.toISOString().slice(0, 16));
-
-                  setIsTaskModalOpen(true);
-                  setIsCreatingNewStory(false); // Reset default state
-                  setSelectedStoryId('');
-                }
-              }}
+              onClick={() => openAddTaskModal()}
               className={`bg-white text-slate-900 px-6 py-3 rounded-xl font-bold hover:bg-slate-50 transition-colors shadow-lg flex items-center gap-2 whitespace-nowrap ${currentTheme.completed ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <Plus size={20} /> Add Tasks
@@ -909,31 +950,29 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                       if (storyTasks.length === 0) return null;
 
                       return (
-                        <div key={story.id} className="bg-slate-50/50 rounded-2xl p-2 border border-slate-200/60">
-                          <div className="px-2 py-3 flex items-center gap-2">
-                            <BookOpen size={16} className="text-slate-400" />
-                            <h4 className="font-bold text-slate-700">{story.title}</h4>
-                            <span className="text-xs text-slate-400">({storyTasks.length})</span>
-                          </div>
-                          <div className="space-y-2">
-                            {storyTasks.sort((a, b) => Number(a.completed) - Number(b.completed)).map(task => (
-                              <TaskCard
-                                key={task.id}
-                                task={task}
-                                stories={stories}
-                                viewMode={viewMode}
-                                themeStyle={themeStyle}
-                                onToggle={toggleTask}
-                                onDelete={deleteTask}
-                                onEdit={handleEditTask}
-                                onFocus={setFocusTask}
-                                onToggleSubtask={handleToggleSubtask}
-                                onAddSubtask={handleAddSubtask}
-                                onGenerateChecklist={handleGenerateChecklist}
-                              />
-                            ))}
-                          </div>
-                        </div>
+                        <StorySection
+                          key={story.id}
+                          story={story}
+                          taskCount={storyTasks.length}
+                          onAddTask={() => openAddTaskModal(story.id)}
+                        >
+                          {storyTasks.sort((a, b) => Number(a.completed) - Number(b.completed)).map(task => (
+                            <TaskCard
+                              key={task.id}
+                              task={task}
+                              stories={stories}
+                              viewMode={viewMode}
+                              themeStyle={themeStyle}
+                              onToggle={toggleTask}
+                              onDelete={deleteTask}
+                              onEdit={handleEditTask}
+                              onFocus={setFocusTask}
+                              onToggleSubtask={handleToggleSubtask}
+                              onAddSubtask={handleAddSubtask}
+                              onGenerateChecklist={handleGenerateChecklist}
+                            />
+                          ))}
+                        </StorySection>
                       );
                     })}
 
