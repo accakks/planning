@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserProfile, Task, Category, ChartData, Theme, ThemeStyle, Story } from '../types';
 import { getTasks, saveTasks, getThemes, saveThemes, getStories, saveStories, deleteTask as apiDeleteTask, deleteTheme as apiDeleteTheme, deleteStory as apiDeleteStory } from '../services/storage';
-import { generateSubtasks, getMotivationalQuote, generateThemeStyle } from '../services/gemini';
-import { Plus, Trash2, CheckCircle2, Circle, Loader2, LogOut, Sparkles, TrendingUp, Target, Clock, AlertCircle, Calendar, Map, LayoutList, FolderKanban, BookOpen, X, Pencil } from 'lucide-react';
+import { generateSubtasks, getMotivationalQuote, generateThemeStyle, generateTaskChecklist } from '../services/gemini';
+import { Plus, Trash2, CheckCircle2, Circle, Loader2, LogOut, Sparkles, TrendingUp, Target, Clock, AlertCircle, Calendar, Map, LayoutList, FolderKanban, BookOpen, X, Pencil, ChevronDown, ChevronUp } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import CalendarButton from './CalendarButton';
+import TaskCard from './TaskCard';
 import FocusMode from './FocusMode';
 import YearRoadmap from './YearRoadmap';
 import Copilot from './Copilot';
@@ -478,6 +479,56 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     }
   };
 
+  const handleToggleSubtask = async (taskId: string, subtaskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const updatedSubtasks = (task.subtasks || []).map(st =>
+      st.id === subtaskId ? { ...st, completed: !st.completed } : st
+    );
+
+    const updatedTask = { ...task, subtasks: updatedSubtasks };
+    setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+    await saveTasks(user.email, [updatedTask]);
+  };
+
+  const handleAddSubtask = async (taskId: string, title: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || !title) return;
+
+    const newSubtask = {
+      id: crypto.randomUUID(),
+      title,
+      completed: false
+    };
+
+    const updatedTask = { ...task, subtasks: [...(task.subtasks || []), newSubtask] };
+    setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+    await saveTasks(user.email, [updatedTask]);
+  };
+
+  const handleGenerateChecklist = async (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    // Optimistic UI for loading state could be added here if needed
+    // For now we'll just try to fetch
+    try {
+      const checklist = await generateTaskChecklist(task.title);
+      const newSubtasks = checklist.map((item: any) => ({
+        id: crypto.randomUUID(),
+        title: item.title,
+        completed: false
+      }));
+
+      const updatedTask = { ...task, subtasks: [...(task.subtasks || []), ...newSubtasks] };
+      setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+      await saveTasks(user.email, [updatedTask]);
+    } catch (e) {
+      console.error("Failed to generate checklist", e);
+    }
+  };
+
   const deleteTask = async (id: string) => {
     setTasks(prev => prev.filter(t => t.id !== id));
     await apiDeleteTask(id);
@@ -515,101 +566,159 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const renderTaskCard = (task: Task) => {
     const status = getTaskStatus(task);
     const parentStory = stories.find(s => s.id === task.storyId);
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+
+    const completedSubtasks = (task.subtasks || []).filter(st => st.completed).length;
+    const totalSubtasks = (task.subtasks || []).length;
+    const progress = totalSubtasks === 0 ? 0 : Math.round((completedSubtasks / totalSubtasks) * 100);
 
     return (
       <div
         key={task.id}
-        className={`group bg-white p-4 rounded-2xl border transition-all duration-200 flex items-start gap-4 hover:shadow-md 
+        className={`group bg-white p-4 rounded-2xl border transition-all duration-200 hover:shadow-md 
           ${task.completed ? 'border-slate-100 opacity-60' : 'border-slate-200'}
           ${status === 'overdue' && !task.completed ? 'border-l-4 border-l-rose-500' : ''}
           ${status === 'soon' && !task.completed ? 'border-l-4 border-l-amber-400' : ''}
         `}
       >
-        <button onClick={() => toggleTask(task.id)} className={`flex-shrink-0 mt-1 ${task.completed ? 'text-green-500' : `text-slate-300 hover:${themeStyle.accentColor}`}`}>
-          {task.completed ? <CheckCircle2 size={24} className="fill-green-100" /> : <Circle size={24} />}
-        </button>
+        <div className="flex items-start gap-4">
+          <button onClick={() => toggleTask(task.id)} className={`flex-shrink-0 mt-1 ${task.completed ? 'text-green-500' : `text-slate-300 hover:${themeStyle.accentColor}`}`}>
+            {task.completed ? <CheckCircle2 size={24} className="fill-green-100" /> : <Circle size={24} />}
+          </button>
 
-        <div className="flex-1 min-w-0">
-          <div className="flex justify-between items-start gap-2">
-            <div className="flex flex-col min-w-0 flex-1">
-              {/* Show Story Badge in List View */}
-              {viewMode === 'list' && parentStory && (
-                <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1 mb-0.5">
-                  <BookOpen size={10} /> {parentStory.title}
-                </span>
+          <div className="flex-1 min-w-0">
+            <div className="flex justify-between items-start gap-2">
+              <div className="flex flex-col min-w-0 flex-1">
+                {viewMode === 'list' && parentStory && (
+                  <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1 mb-0.5">
+                    <BookOpen size={10} /> {parentStory.title}
+                  </span>
+                )}
+                <h4 className={`font-semibold truncate ${task.completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.title}</h4>
+              </div>
+
+              {!task.completed && (
+                <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1 flex-shrink-0
+                   ${status === 'overdue' ? 'bg-rose-100 text-rose-600' :
+                    status === 'soon' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                  {status === 'overdue' && <AlertCircle size={10} />}
+                  {status === 'soon' && <Clock size={10} />}
+                  {formatDeadline(task.dueDate)}
+                </div>
               )}
-              <h4 className={`font-semibold truncate ${task.completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.title}</h4>
             </div>
 
-            {!task.completed && (
-              <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1 flex-shrink-0
-                 ${status === 'overdue' ? 'bg-rose-100 text-rose-600' :
-                  status === 'soon' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
-                {status === 'overdue' && <AlertCircle size={10} />}
-                {status === 'soon' && <Clock size={10} />}
-                {formatDeadline(task.dueDate)}
+            <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
+              <span className="flex items-center gap-1 font-medium" style={{ color: CATEGORY_COLORS[task.category] }}>
+                {task.category}
+              </span>
+              <span>•</span>
+              <span>{task.estimatedMinutes}m</span>
+              {task.description && <span className="hidden sm:inline">• {task.description}</span>}
+            </div>
+
+            {/* Subtasks Summary / Toggle */}
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="text-xs font-bold text-slate-400 hover:text-slate-600 flex items-center gap-1 bg-slate-50 px-2 py-1 rounded"
+              >
+                {totalSubtasks > 0 ? (
+                  <>
+                    {/* Progress Bar */}
+                    <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-slate-400 transition-all" style={{ width: `${progress}%` }}></div>
+                    </div>
+                    <span>{completedSubtasks}/{totalSubtasks}</span>
+                  </>
+                ) : (
+                  <span>Add Checklist</span>
+                )}
+                {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+            </div>
+
+            {/* CheckList Section */}
+            {isExpanded && (
+              <div className="mt-3 pl-2 border-l-2 border-slate-100 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                {(task.subtasks || []).map(st => (
+                  <div key={st.id} className="flex items-center gap-2 group/sub">
+                    <button
+                      onClick={() => handleToggleSubtask(task.id, st.id)}
+                      className={`text-slate-300 hover:text-slate-500 ${st.completed ? 'text-green-500' : ''}`}
+                    >
+                      {st.completed ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                    </button>
+                    <span className={`text-sm ${st.completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                      {st.title}
+                    </span>
+                  </div>
+                ))}
+
+                {/* Add Subtask Input */}
+                <div className="flex items-center gap-2 pt-1">
+                  <Plus size={16} className="text-slate-300" />
+                  <input
+                    type="text"
+                    className="text-sm bg-transparent border-none focus:ring-0 p-0 placeholder:text-slate-400 text-slate-700 w-full"
+                    placeholder="Add step..."
+                    value={newSubtaskTitle}
+                    onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleAddSubtask(task.id, newSubtaskTitle);
+                        setNewSubtaskTitle('');
+                      }
+                    }}
+                  />
+                  {/* AI Generate Button (only if no subtasks yet to keep it clean, or always?) */}
+                  {totalSubtasks === 0 && (
+                    <button
+                      onClick={() => handleGenerateChecklist(task.id)}
+                      className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full flex items-center gap-1 hover:bg-purple-100 transition-colors whitespace-nowrap"
+                      title="Auto-generate steps"
+                    >
+                      <Sparkles size={10} /> AI Steps
+                    </button>
+                  )}
+                </div>
               </div>
             )}
-          </div>
-          <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
-            <span className="flex items-center gap-1 font-medium" style={{ color: CATEGORY_COLORS[task.category] }}>
-              {task.category}
-            </span>
-            <span>•</span>
-            <span>{task.estimatedMinutes}m</span>
-            {task.description && <span className="hidden sm:inline">• {task.description}</span>}
+
+            {/* Mobile Actions */}
+            <div className="flex sm:hidden items-center gap-4 mt-3 pt-3 border-t border-slate-100">
+              <div className="scale-90 origin-left">
+                <CalendarButton task={task} />
+              </div>
+              <button
+                onClick={() => handleEditTask(task)}
+                className="flex items-center gap-1 text-xs font-bold text-slate-400"
+              >
+                <Pencil size={16} /> Edit
+              </button>
+              <button
+                onClick={() => deleteTask(task.id)}
+                className="flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-red-500"
+              >
+                <Trash2 size={16} /> Delete
+              </button>
+            </div>
           </div>
 
-          {/* Mobile Actions (Always Visible) */}
-          <div className="flex sm:hidden items-center gap-4 mt-3 pt-3 border-t border-slate-100">
-            {!task.completed && (
-              <button
-                onClick={() => setFocusTask(task)}
-                className={`flex items-center gap-1 text-xs font-bold ${themeStyle.accentColor}`}
-              >
-                <Target size={16} /> Focus
-              </button>
-            )}
-            <div className="scale-90 origin-left">
-              <CalendarButton task={task} />
-            </div>
+          {/* Desktop Actions */}
+          <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <CalendarButton task={task} />
             <button
               onClick={() => handleEditTask(task)}
-              className="flex items-center gap-1 text-xs font-bold text-slate-400"
+              className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors"
             >
-              <Pencil size={16} /> Edit
+              <Pencil size={18} />
             </button>
-            <button
-              onClick={() => deleteTask(task.id)}
-              className="flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-red-500"
-            >
-              <Trash2 size={16} /> Delete
+            <button onClick={() => deleteTask(task.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+              <Trash2 size={18} />
             </button>
           </div>
-        </div>
-
-        {/* Desktop Actions (Hover Only) */}
-        <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          {!task.completed && (
-            <button
-              onClick={() => setFocusTask(task)}
-              className={`p-2 hover:bg-slate-50 rounded-full transition-colors ${themeStyle.accentColor}`}
-              title="Focus Mode"
-            >
-              <Target size={18} />
-            </button>
-          )}
-          <CalendarButton task={task} />
-          <button
-            onClick={() => handleEditTask(task)}
-            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors"
-            title="Edit Task"
-          >
-            <Pencil size={18} />
-          </button>
-          <button onClick={() => deleteTask(task.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
-            <Trash2 size={18} />
-          </button>
         </div>
       </div>
     );
@@ -773,7 +882,22 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                     {[...currentThemeTasks].sort((a, b) => {
                       if (a.completed !== b.completed) return Number(a.completed) - Number(b.completed);
                       return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-                    }).map(renderTaskCard)}
+                    }).map(task => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        stories={stories}
+                        viewMode={viewMode}
+                        themeStyle={themeStyle}
+                        onToggle={toggleTask}
+                        onDelete={deleteTask}
+                        onEdit={handleEditTask}
+                        onFocus={setFocusTask}
+                        onToggleSubtask={handleToggleSubtask}
+                        onAddSubtask={handleAddSubtask}
+                        onGenerateChecklist={handleGenerateChecklist}
+                      />
+                    ))}
                   </div>
                 )}
 
@@ -792,7 +916,22 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                             <span className="text-xs text-slate-400">({storyTasks.length})</span>
                           </div>
                           <div className="space-y-2">
-                            {storyTasks.sort((a, b) => Number(a.completed) - Number(b.completed)).map(renderTaskCard)}
+                            {storyTasks.sort((a, b) => Number(a.completed) - Number(b.completed)).map(task => (
+                              <TaskCard
+                                key={task.id}
+                                task={task}
+                                stories={stories}
+                                viewMode={viewMode}
+                                themeStyle={themeStyle}
+                                onToggle={toggleTask}
+                                onDelete={deleteTask}
+                                onEdit={handleEditTask}
+                                onFocus={setFocusTask}
+                                onToggleSubtask={handleToggleSubtask}
+                                onAddSubtask={handleAddSubtask}
+                                onGenerateChecklist={handleGenerateChecklist}
+                              />
+                            ))}
                           </div>
                         </div>
                       );
@@ -806,7 +945,22 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                           <h4 className="font-bold text-slate-700">General Tasks</h4>
                         </div>
                         <div className="space-y-2">
-                          {currentThemeTasks.filter(t => !t.storyId).sort((a, b) => Number(a.completed) - Number(b.completed)).map(renderTaskCard)}
+                          {currentThemeTasks.filter(t => !t.storyId).sort((a, b) => Number(a.completed) - Number(b.completed)).map(task => (
+                            <TaskCard
+                              key={task.id}
+                              task={task}
+                              stories={stories}
+                              viewMode={viewMode}
+                              themeStyle={themeStyle}
+                              onToggle={toggleTask}
+                              onDelete={deleteTask}
+                              onEdit={handleEditTask}
+                              onFocus={setFocusTask}
+                              onToggleSubtask={handleToggleSubtask}
+                              onAddSubtask={handleAddSubtask}
+                              onGenerateChecklist={handleGenerateChecklist}
+                            />
+                          ))}
                         </div>
                       </div>
                     )}

@@ -74,11 +74,49 @@ export const generateSubtasks = async (goal: string): Promise<Partial<Task>[]> =
   }
 };
 
+export const generateTaskChecklist = async (taskTitle: string): Promise<any[]> => {
+  const prompt = `
+    I have a task: "${taskTitle}".
+    Please break this down into 3-5 sub-steps to complete it.
+    Return ONLY a valid JSON array of objects with the following structure:
+    [
+      { "title": "Subtask title", "completed": false }
+    ]
+    Example:
+    [
+      { "title": "Draft outline", "completed": false },
+      { "title": "Review with team", "completed": false }
+    ]
+  `;
+
+  try {
+    const response = await callGeminiProxy({
+      prompt: prompt,
+      config: {
+        responseMimeType: "application/json"
+      }
+    });
+
+    let text = response.text;
+    if (text && text.includes('```json')) {
+      text = text.replace(/```json/g, '').replace(/```/g, '');
+    }
+
+    if (text) {
+      return JSON.parse(text);
+    }
+    return [];
+  } catch (error) {
+    console.error("Failed to generate checklist:", error);
+    return [];
+  }
+};
+
 export const getMotivationalQuote = async (themeContext?: string): Promise<string> => {
   try {
     const prompt = themeContext
-      ? `Give me a short, punchy motivational quote for a woman in her specific era: "${themeContext}". Max 15 words.`
-      : "Give me one short, punchy, energetic motivational quote for a woman about to turn 29 and crush her goals. Max 15 words.";
+      ? `Give me exactly one short, punchy motivational quote for a woman in her specific era: "${themeContext}". Max 15 words. Return ONLY the quote text, nothing else.`
+      : "Give me exactly one short, punchy, energetic motivational quote for a woman about to turn 29 and crush her goals. Max 15 words. Return ONLY the quote text, nothing else.";
 
     const response = await callGeminiProxy({
       prompt: prompt,

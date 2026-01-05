@@ -44,6 +44,13 @@ export interface Task {
   estimatedMinutes: number;
   completed: boolean;
   isAiGenerated?: boolean;
+  subtasks?: Subtask[];
+}
+
+export interface Subtask {
+  id: string;
+  title: string;
+  completed: boolean;
 }
 
 export interface UserProfile {

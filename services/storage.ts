@@ -10,19 +10,19 @@ const getCurrentUserId = async () => {
 export const saveUser = async (user: UserProfile): Promise<void> => {
   const userId = user.id || await getCurrentUserId();
   if (userId) {
-     const { error } = await supabase.from('profiles').upsert({
-         id: userId,
-         email: user.email,
-         name: user.name
-     });
-     if (error) console.error('Error saving user profile:', error);
+    const { error } = await supabase.from('profiles').upsert({
+      id: userId,
+      email: user.email,
+      name: user.name
+    });
+    if (error) console.error('Error saving user profile:', error);
   }
 };
 
 export const getUser = async (): Promise<UserProfile | null> => {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) return null;
-  
+
   return {
     id: session.user.id,
     email: session.user.email || '',
@@ -44,7 +44,7 @@ export const getTasks = async (email?: string): Promise<Task[]> => {
     .from('tasks')
     .select('*')
     .eq('user_id', userId); // Explicitly filter by user_id
-    
+
   if (error) {
     console.error('Error fetching tasks:', error);
     throw error;
@@ -60,7 +60,8 @@ export const getTasks = async (email?: string): Promise<Task[]> => {
     dueDate: t.due_date,
     estimatedMinutes: t.estimated_minutes,
     completed: t.completed,
-    isAiGenerated: t.is_ai_generated
+    isAiGenerated: t.is_ai_generated,
+    subtasks: t.subtasks || []
   }));
 };
 
@@ -84,11 +85,12 @@ export const saveTasks = async (email: string, tasks: Task[]): Promise<boolean> 
     due_date: t.dueDate,
     estimated_minutes: t.estimatedMinutes,
     completed: t.completed,
-    is_ai_generated: t.isAiGenerated
+    is_ai_generated: t.isAiGenerated,
+    subtasks: t.subtasks || []
   }));
 
   const { error } = await supabase.from('tasks').upsert(dbTasks);
-  
+
   if (error) {
     console.error('Error saving tasks:', error);
     throw error;
@@ -106,7 +108,7 @@ export const getThemes = async (email?: string): Promise<Theme[]> => {
     .from('themes')
     .select('*')
     .eq('user_id', userId);
-    
+
   if (error) {
     console.error('Error fetching themes:', error);
     throw error;
@@ -158,7 +160,7 @@ export const getStories = async (email?: string): Promise<Story[]> => {
     .from('stories')
     .select('*')
     .eq('user_id', userId);
-    
+
   if (error) {
     console.error('Error fetching stories:', error);
     throw error;
@@ -197,25 +199,25 @@ export const saveStories = async (email: string, stories: Story[]): Promise<bool
 };
 
 export const deleteTask = async (taskId: string) => {
-    const { error } = await supabase.from('tasks').delete().eq('id', taskId);
-    if (error) {
-        console.error('Error deleting task:', error);
-        throw error;
-    }
+  const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+  if (error) {
+    console.error('Error deleting task:', error);
+    throw error;
+  }
 }
 
 export const deleteTheme = async (themeId: string) => {
-    const { error } = await supabase.from('themes').delete().eq('id', themeId);
-    if (error) {
-        console.error('Error deleting theme:', error);
-        throw error;
-    }
+  const { error } = await supabase.from('themes').delete().eq('id', themeId);
+  if (error) {
+    console.error('Error deleting theme:', error);
+    throw error;
+  }
 }
 
 export const deleteStory = async (storyId: string) => {
-    const { error } = await supabase.from('stories').delete().eq('id', storyId);
-    if (error) {
-        console.error('Error deleting story:', error);
-        throw error;
-    }
+  const { error } = await supabase.from('stories').delete().eq('id', storyId);
+  if (error) {
+    console.error('Error deleting story:', error);
+    throw error;
+  }
 }

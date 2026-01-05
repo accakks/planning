@@ -83,7 +83,9 @@ create table public.tasks (
   due_date timestamptz,
   estimated_minutes integer,
   completed boolean default false,
+  completed boolean default false,
   is_ai_generated boolean default false,
+  subtasks jsonb default '[]'::jsonb,
   created_at timestamptz default now()
 );
 
