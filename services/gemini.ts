@@ -4,8 +4,8 @@ import { Category, Task, ThemeStyle, UserProfile, Theme } from '../types';
 
 // Helper to call the Edge Function
 const callGeminiProxy = async (params: any) => {
-  // Use gemini-3-flash-preview for better stability and limits
-  params.model = 'gemini-3-flash-preview';
+  // Use gemini-2.5-flash for stable performance and better rate limits
+  params.model = 'gemini-2.5-flash';
 
   const { data, error } = await supabase.functions.invoke('gemini-proxy', {
     body: params,
