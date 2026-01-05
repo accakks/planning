@@ -18,9 +18,9 @@ serve(async (req) => {
       throw new Error('Missing GEMINI_API_KEY environment variable');
     }
 
-    // Default to gemini-1.5-flash if not provided. 
+    // Default to gemini-flash-latest if not provided. 
     // The user's curl used gemini-2.0-flash, so we can support that too if passed.
-    const modelName = model || 'gemini-1.5-flash';
+    const modelName = model || 'gemini-flash-latest';
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
     // Construct the payload for the REST API
