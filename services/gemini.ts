@@ -4,8 +4,8 @@ import { Category, Task, ThemeStyle, UserProfile, Theme } from '../types';
 
 // Helper to call the Edge Function
 const callGeminiProxy = async (params: any) => {
-  // Use gemini-1.5-flash for stable performance and high rate limits
-  params.model = 'gemini-1.5-flash';
+  // Use gemini-2.0-flash for latest features and stability
+  params.model = 'gemini-2.0-flash';
 
   const { data, error } = await supabase.functions.invoke('gemini-proxy', {
     body: params,
@@ -24,16 +24,16 @@ export const testGeminiConnection = async (): Promise<{ success: boolean; messag
     const response = await callGeminiProxy({
       prompt: "Hello, reply with 'OK' if you can hear me.",
     });
-    return { 
-      success: true, 
-      message: response.text || "OK", 
-      model: "gemini-1.5-flash" 
+    return {
+      success: true,
+      message: response.text || "OK",
+      model: "gemini-2.0-flash"
     };
   } catch (error: any) {
-    return { 
-      success: false, 
-      message: error.message || "Unknown error", 
-      model: "gemini-1.5-flash" 
+    return {
+      success: false,
+      message: error.message || "Unknown error",
+      model: "gemini-2.0-flash"
     };
   }
 };
@@ -76,10 +76,10 @@ export const generateSubtasks = async (goal: string): Promise<Partial<Task>[]> =
 
 export const getMotivationalQuote = async (themeContext?: string): Promise<string> => {
   try {
-    const prompt = themeContext 
+    const prompt = themeContext
       ? `Give me a short, punchy motivational quote for a woman in her specific era: "${themeContext}". Max 15 words.`
       : "Give me one short, punchy, energetic motivational quote for a woman about to turn 29 and crush her goals. Max 15 words.";
-      
+
     const response = await callGeminiProxy({
       prompt: prompt,
     });
@@ -119,7 +119,7 @@ export const generateThemeStyle = async (description: string): Promise<ThemeStyl
 
     let text = response.text;
     if (text && text.includes('```json')) {
-        text = text.replace(/```json/g, '').replace(/```/g, '');
+      text = text.replace(/```json/g, '').replace(/```/g, '');
     }
 
     if (text) {
@@ -188,7 +188,7 @@ export const getCopilotSystemInstruction = (user: UserProfile, currentTheme: The
 };
 
 export const chatWithCopilot = async (
-  history: { role: string, parts: { text: string }[] }[], 
+  history: { role: string, parts: { text: string }[] }[],
   message: string,
   user: UserProfile,
   currentTheme: Theme,
@@ -204,7 +204,7 @@ export const chatWithCopilot = async (
     history: cleanHistory,
     systemInstruction: systemInstruction,
     config: {
-        temperature: 0.8,
+      temperature: 0.8,
     }
   });
 
