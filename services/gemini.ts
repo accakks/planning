@@ -4,20 +4,45 @@ import { Category, Task, ThemeStyle, UserProfile, Theme } from '../types';
 
 // Helper to call the Edge Function
 const callGeminiProxy = async (params: any) => {
-  // Use gemini-2.0-flash for latest features and stability by default
-  const modelToUse = params.model || 'gemini-2.0-flash';
+  // Use gemini-3-flash-preview by default
+  const primaryModel = 'gemini-3-flash-preview';
+  const fallbackModel = 'gemini-2.0-flash';
+
+  const modelToUse = params.model || primaryModel;
   params.model = modelToUse;
 
-  const { data, error } = await supabase.functions.invoke('gemini-proxy', {
-    body: params,
-  });
+  try {
+    const { data, error } = await supabase.functions.invoke('gemini-proxy', {
+      body: params,
+    });
 
-  if (error) {
-    console.error("Gemini Proxy Error:", error);
-    throw new Error(error.message || "Failed to contact AI service");
+    if (error) {
+      throw error;
+    }
+
+    return data;
+  } catch (error: any) {
+    // If it was already using the fallback or a specific model, don't retry
+    if (modelToUse !== primaryModel) {
+      console.error("Gemini Proxy Error:", error);
+      throw new Error(error.message || "Failed to contact AI service");
+    }
+
+    console.warn(`Primary model ${primaryModel} failed, falling back to ${fallbackModel}`, error);
+
+    // Retry with fallback
+    params.model = fallbackModel;
+    const { data, error: fallbackError } = await supabase.functions.invoke('gemini-proxy', {
+      body: params,
+    });
+
+    if (fallbackError) {
+      console.error("Gemini Proxy Fallback Error:", fallbackError);
+      throw new Error(fallbackError.message || "Failed to contact AI service (Fallback)");
+    }
+
+    return data;
   }
-
-  return data;
 };
 
 export const testGeminiConnection = async (): Promise<{ success: boolean; message: string; model: string }> => {
@@ -25,16 +50,17 @@ export const testGeminiConnection = async (): Promise<{ success: boolean; messag
     const response = await callGeminiProxy({
       prompt: "Hello, reply with 'OK' if you can hear me.",
     });
+    // The response could come from primary or fallback, but callGeminiProxy handles it
     return {
       success: true,
       message: response.text || "OK",
-      model: "gemini-2.0-flash"
+      model: response.model || "gemini-3-flash-preview"
     };
   } catch (error: any) {
     return {
       success: false,
       message: error.message || "Unknown error",
-      model: "gemini-2.0-flash"
+      model: "gemini-3-flash-preview"
     };
   }
 };
@@ -243,6 +269,69 @@ export const analyzeTask = async (taskTitle: string, existingStories: { id: stri
   } catch (error) {
     console.error("Failed to analyze task:", error);
     return { estimatedMinutes: 30, category: Category.PERSONAL };
+  }
+};
+
+export const reanalyzeTasks = async (selectedTasks: Task[]): Promise<{
+  taskId: string;
+  concern: string;
+  suggestedMinutes?: number;
+  suggestedDueDate?: string;
+}[]> => {
+  const tasksContext = selectedTasks.map(t => `- [${t.title}] (Current: ${t.estimatedMinutes}m, Due: ${t.dueDate})`).join('\n');
+
+  const prompt = `
+    I have a list of tasks for the year 2026. 
+    Please review them for possible estimation errors or deadline concerns.
+    
+    TASKS TO REVIEW:
+    ${tasksContext}
+    
+    CRITERIA for raising a concern:
+    1. Focus Time Error: If a complex task has too little time (e.g., "Build Backend" in 30 mins) or if a simple task has too much time.
+    2. Deadline Concern: If a task's title implies it should be done sooner or later than its due date.
+    
+    Return ONLY a valid JSON array of concerns. If no concerns, return [].
+    
+    Structure:
+    [
+      {
+        "taskId": "UUID-of-the-task-provided",
+        "concern": "The concern description",
+        "suggestedMinutes": 60,
+        "suggestedDueDate": "2026-01-05T18:00" 
+      }
+    ]
+  `;
+
+  try {
+    const response = await callGeminiProxy({
+      prompt: prompt,
+      config: {
+        responseMimeType: "application/json"
+      }
+    });
+
+    let text = response.text;
+    if (text && text.includes('```json')) {
+      text = text.replace(/```json/g, '').replace(/```/g, '');
+    }
+
+    if (text) {
+      const parsed = JSON.parse(text);
+      // Ensure we match the task IDs from the input
+      return parsed.map((p: any) => {
+        const originalTask = selectedTasks.find(t => t.title === p.taskId || t.id === p.taskId);
+        return {
+          ...p,
+          taskId: originalTask ? originalTask.id : p.taskId
+        };
+      });
+    }
+    return [];
+  } catch (error) {
+    console.error("Failed to reanalyze tasks:", error);
+    return [];
   }
 };
 

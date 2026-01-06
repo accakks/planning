@@ -5,7 +5,8 @@ import { X, CheckCircle2, Play, Pause, RotateCcw, ArrowLeft } from 'lucide-react
 interface FocusModeProps {
   task: Task;
   onComplete: () => void;
-  onExit: () => void;
+  onExit: (remainingMinutes: number) => void;
+  onUpdateProgress: (remainingMinutes: number) => void;
 }
 
 const CATEGORY_COLORS: Record<Category, string> = {
@@ -17,13 +18,13 @@ const CATEGORY_COLORS: Record<Category, string> = {
   [Category.PERSONAL]: 'from-violet-400 to-purple-600',
 };
 
-const FocusMode: React.FC<FocusModeProps> = ({ task, onComplete, onExit }) => {
-  // Timer state in seconds
-  const [timeLeft, setTimeLeft] = useState(task.estimatedMinutes * 60);
+const FocusMode: React.FC<FocusModeProps> = ({ task, onComplete, onExit, onUpdateProgress }) => {
+  // Timer state in seconds internally, but mapped to minutes for the task
+  const [timeLeft, setTimeLeft] = useState((task.remainingMinutes ?? task.estimatedMinutes) * 60);
   const [isActive, setIsActive] = useState(false);
-  
+
   // Audio for timer end (optional, visual only for now)
-  
+
   useEffect(() => {
     // Fix: Use ReturnType<typeof setInterval> to be compatible with both Node and Browser environments
     let interval: ReturnType<typeof setInterval>;
@@ -44,10 +45,19 @@ const FocusMode: React.FC<FocusModeProps> = ({ task, onComplete, onExit }) => {
     setIsActive(true);
   }, []);
 
-  const toggleTimer = () => setIsActive(!isActive);
+  const toggleTimer = () => {
+    if (isActive) {
+      // If we are pausing, save progress (converting seconds to minutes)
+      onUpdateProgress(timeLeft / 60);
+    }
+    setIsActive(!isActive);
+  };
+
   const resetTimer = () => {
     setIsActive(false);
-    setTimeLeft(task.estimatedMinutes * 60);
+    const fullTimeSeconds = task.estimatedMinutes * 60;
+    setTimeLeft(fullTimeSeconds);
+    onUpdateProgress(task.estimatedMinutes);
   };
 
   const formatTime = (seconds: number) => {
@@ -63,8 +73,8 @@ const FocusMode: React.FC<FocusModeProps> = ({ task, onComplete, onExit }) => {
     <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col animate-in fade-in duration-300">
       {/* Top Bar */}
       <div className="p-6 flex justify-between items-center">
-        <button 
-          onClick={onExit}
+        <button
+          onClick={() => onExit(timeLeft / 60)}
           className="p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors flex items-center gap-2"
         >
           <ArrowLeft size={20} />
@@ -77,7 +87,7 @@ const FocusMode: React.FC<FocusModeProps> = ({ task, onComplete, onExit }) => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col items-center justify-center p-6 max-w-2xl mx-auto w-full text-center">
-        
+
         <div className="mb-12">
           <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Currently Focusing On</h2>
           <h1 className="text-4xl md:text-5xl font-bold text-slate-900 leading-tight">
@@ -115,19 +125,19 @@ const FocusMode: React.FC<FocusModeProps> = ({ task, onComplete, onExit }) => {
               strokeDashoffset={`${283 - (283 * progress) / 100}%`}
             />
           </svg>
-          
+
           <div className="flex flex-col items-center z-10">
-             <div className="text-7xl md:text-8xl font-mono font-bold text-slate-900 tracking-tighter">
+            <div className="text-7xl md:text-8xl font-mono font-bold text-slate-900 tracking-tighter">
               {formatTime(timeLeft)}
             </div>
             <div className="flex items-center gap-4 mt-6">
-              <button 
+              <button
                 onClick={toggleTimer}
                 className="p-4 rounded-full bg-slate-100 text-slate-900 hover:bg-slate-200 transition-all"
               >
                 {isActive ? <Pause size={24} /> : <Play size={24} />}
               </button>
-              <button 
+              <button
                 onClick={resetTimer}
                 className="p-4 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-all"
               >

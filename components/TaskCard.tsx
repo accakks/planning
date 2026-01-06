@@ -14,6 +14,9 @@ interface TaskCardProps {
     onFocus: (task: Task) => void;
     onToggleSubtask: (taskId: string, subtaskId: string) => void;
     onToggleImportant: (id: string) => void;
+    isSelectMode?: boolean;
+    isSelected?: boolean;
+    onToggleSelection?: (id: string) => void;
 }
 
 const CATEGORY_COLORS: Record<Category, string> = {
@@ -56,6 +59,9 @@ const TaskCard: React.FC<TaskCardProps> = ({
     onFocus,
     onToggleSubtask,
     onToggleImportant,
+    isSelectMode,
+    isSelected,
+    onToggleSelection,
 }) => {
     const status = getTaskStatus(task);
     const parentStory = stories.find(s => s.id === task.storyId);
@@ -74,9 +80,21 @@ const TaskCard: React.FC<TaskCardProps> = ({
       `}
         >
             <div className="flex items-start gap-4">
-                <button onClick={() => onToggle(task.id)} className={`flex-shrink-0 mt-1 ${task.completed ? 'text-green-500' : `text-slate-300 hover:${themeStyle.accentColor}`}`}>
-                    {task.completed ? <CheckCircle2 size={24} className="fill-green-100" /> : <Circle size={24} />}
-                </button>
+                {!isSelectMode ? (
+                    <button onClick={() => onToggle(task.id)} className={`flex-shrink-0 mt-1 ${task.completed ? 'text-green-500' : `text-slate-300 hover:${themeStyle.accentColor}`}`}>
+                        {task.completed ? <CheckCircle2 size={24} className="fill-green-100" /> : <Circle size={24} />}
+                    </button>
+                ) : (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleSelection?.(task.id);
+                        }}
+                        className={`flex-shrink-0 mt-1 transition-all duration-200 ${isSelected ? 'text-indigo-600 scale-110' : 'text-slate-300 hover:text-slate-400'}`}
+                    >
+                        {isSelected ? <CheckCircle2 size={24} className="fill-indigo-50" /> : <Circle size={24} />}
+                    </button>
+                )}
 
                 <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start gap-2">

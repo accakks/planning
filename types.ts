@@ -46,6 +46,7 @@ export interface Task {
   completed: boolean;
   isAiGenerated?: boolean;
   isImportant?: boolean;
+  remainingMinutes?: number;
   subtasks?: Subtask[];
 }
 

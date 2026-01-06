@@ -9,6 +9,8 @@ import TaskCard from './TaskCard';
 import FocusMode from './FocusMode';
 import YearRoadmap from './YearRoadmap';
 import Copilot from './Copilot';
+import ReanalyzeModal from './ReanalyzeModal';
+import { updateTaskRemainingTime } from '../services/storage';
 
 
 
@@ -148,6 +150,22 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilterCategory, setSelectedFilterCategory] = useState<Category | 'All'>('All');
   const [hideCompleted, setHideCompleted] = useState(false);
+
+  // Selection state
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [isReanalyzeModalOpen, setIsReanalyzeModalOpen] = useState(false);
+
+  const toggleTaskSelection = (id: string) => {
+    setSelectedTaskIds(prev =>
+      prev.includes(id) ? prev.filter(tid => tid !== id) : [...prev, id]
+    );
+  };
+
+  const clearSelection = () => {
+    setSelectedTaskIds([]);
+    setIsSelectMode(false);
+  };
 
   const openAddTaskModal = (storyId?: string) => {
     if (currentTheme.completed) {
@@ -813,6 +831,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     await saveStories(user.email, [updatedStory]);
   };
 
+  const handleUpdateTaskWithSuggestion = async (taskId: string, suggestion: Partial<Task>) => {
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...suggestion } : t));
+    const task = tasks.find(t => t.id === taskId);
+    if (task) {
+      await saveTasks(user.email, [{ ...task, ...suggestion }]);
+    }
+  };
+
   const handleGenerateChecklist = async (taskId: string) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -851,9 +877,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     await apiDeleteTask(id);
   };
 
-  const completeFocusTask = () => {
+  const handleUpdateTaskRemainingTime = async (taskId: string, minutes: number) => {
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, remainingMinutes: minutes } : t));
+    try {
+      await updateTaskRemainingTime(taskId, minutes);
+    } catch (error) {
+      console.error('Failed to sync remaining time:', error);
+    }
+  };
+
+  const completeFocusTask = async () => {
     if (focusTask) {
-      toggleTask(focusTask.id);
+      const taskId = focusTask.id;
+      toggleTask(taskId);
+      // Also clear remaining time in DB when completed
+      await updateTaskRemainingTime(taskId, 0);
       setFocusTask(null);
     }
   };
@@ -1042,7 +1080,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   };
 
   if (loading || !currentTheme) return <div className="h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-rose-500" /></div>;
-  if (focusTask) return <FocusMode task={focusTask} onComplete={completeFocusTask} onExit={() => setFocusTask(null)} />;
+  if (focusTask) return (
+    <FocusMode
+      task={focusTask}
+      onComplete={completeFocusTask}
+      onExit={(timeLeftMinutes) => {
+        handleUpdateTaskRemainingTime(focusTask.id, timeLeftMinutes);
+        setFocusTask(null);
+      }}
+      onUpdateProgress={(timeLeftMinutes) => handleUpdateTaskRemainingTime(focusTask.id, timeLeftMinutes)}
+    />
+  );
 
   const themeStyle = currentTheme.style || DEFAULT_STYLE;
 
@@ -1113,6 +1161,35 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 relative z-10">
 
+        {/* Selection Banner */}
+        {selectedTaskIds.length > 0 && (
+          <div className="mb-6 bg-slate-900 text-white p-4 rounded-2xl shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-300">
+            <div className="flex items-center gap-4">
+              <div className="bg-white/10 p-2.5 rounded-xl">
+                <Sparkles size={20} className="text-amber-400" />
+              </div>
+              <div>
+                <p className="font-bold text-lg">{selectedTaskIds.length} tasks selected</p>
+                <p className="text-sm text-slate-400">AI can review these for focus time and deadline concerns.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <button
+                onClick={clearSelection}
+                className="flex-1 sm:flex-none px-4 py-2 text-sm font-bold text-slate-400 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setIsReanalyzeModalOpen(true)}
+                className="flex-1 sm:flex-none bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-500 transition-all shadow-lg active:scale-95"
+              >
+                <Sparkles size={18} /> Reanalyze Estimates
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
@@ -1130,6 +1207,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                 disabled={currentTheme.completed}
               >
                 <Plus size={14} /> Add Tasks
+              </button>
+              <button
+                onClick={() => setIsSelectMode(!isSelectMode)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm border
+                    ${isSelectMode ? 'bg-slate-900 text-white border-slate-900' : 'text-slate-500 bg-white border-slate-200 hover:border-slate-300'}`}
+              >
+                {isSelectMode ? 'Cancel Selection' : 'Select Tasks'}
               </button>
             </div>
 
@@ -1264,13 +1348,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                         task={task}
                         stories={stories}
                         viewMode={viewMode}
-                        themeStyle={themeStyle}
+                        themeStyle={currentTheme.style}
                         onToggle={toggleTask}
                         onDelete={deleteTask}
                         onEdit={handleEditTask}
                         onFocus={setFocusTask}
                         onToggleSubtask={handleToggleSubtask}
                         onToggleImportant={handleToggleTaskImportant}
+                        isSelectMode={isSelectMode}
+                        isSelected={selectedTaskIds.includes(task.id)}
+                        onToggleSelection={toggleTaskSelection}
                       />
                     ))}
                   </div>
@@ -1751,6 +1838,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           </div>
         )
       }
+      <ReanalyzeModal
+        isOpen={isReanalyzeModalOpen}
+        onClose={() => setIsReanalyzeModalOpen(false)}
+        selectedTasks={tasks.filter(t => selectedTaskIds.includes(t.id))}
+        onApprove={handleUpdateTaskWithSuggestion}
+      />
     </div >
   );
 };

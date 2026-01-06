@@ -62,6 +62,7 @@ export const getTasks = async (email?: string): Promise<Task[]> => {
     completed: t.completed,
     isAiGenerated: t.is_ai_generated,
     isImportant: t.is_important,
+    remainingMinutes: t.remaining_minutes,
     subtasks: t.subtasks || []
   }));
 };
@@ -88,6 +89,7 @@ export const saveTasks = async (email: string, tasks: Task[]): Promise<boolean> 
     completed: t.completed,
     is_ai_generated: t.isAiGenerated,
     is_important: t.isImportant || false,
+    remaining_minutes: t.remainingMinutes,
     subtasks: t.subtasks || []
   }));
 
@@ -225,3 +227,15 @@ export const deleteStory = async (storyId: string) => {
     throw error;
   }
 }
+
+export const updateTaskRemainingTime = async (taskId: string, minutes: number): Promise<void> => {
+  const { error } = await supabase
+    .from('tasks')
+    .update({ remaining_minutes: minutes })
+    .eq('id', taskId);
+
+  if (error) {
+    console.error('Error updating task remaining time:', error);
+    throw error;
+  }
+};
