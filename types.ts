@@ -27,7 +27,7 @@ export interface Theme {
 
 export interface Story {
   id: string;
-  themeId: string;
+  themeId?: string;
   title: string;
   description?: string;
   isImportant?: boolean;

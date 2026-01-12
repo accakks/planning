@@ -189,7 +189,7 @@ export const saveStories = async (email: string, stories: Story[]): Promise<bool
   const dbStories = stories.map(s => ({
     id: s.id,
     user_id: userId,
-    theme_id: s.themeId,
+    theme_id: s.themeId || null,
     title: s.title,
     description: s.description,
     is_important: s.isImportant || false,

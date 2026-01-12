@@ -294,9 +294,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     tasks.filter(t => t.themeId === currentThemeId)
     , [tasks, currentThemeId]);
 
-  const currentThemeStories = useMemo(() =>
-    stories.filter(s => s.themeId === currentThemeId)
-    , [stories, currentThemeId]);
+  // Available stories (global)
+  const availableStories = useMemo(() =>
+    stories.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    , [stories]);
 
   const filteredTasks = useMemo(() => {
     return currentThemeTasks.filter(task => {
@@ -1104,7 +1105,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         user={user}
         currentTheme={currentTheme}
         tasks={currentThemeTasks}
-        stories={currentThemeStories}
+        stories={availableStories}
         onAddTasks={handleCopilotAddTasks}
         onAddTheme={handleCopilotAddTheme}
         onAddStory={handleCopilotAddStory}
@@ -1366,7 +1367,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                 {viewMode === 'story' && (
                   <>
                     {/* Render Tasks grouped by Story */}
-                    {currentThemeStories.sort((a, b) => {
+                    {availableStories.sort((a, b) => {
                       const aHasImportant = a.isImportant || filteredTasks.some(t => t.storyId === a.id && t.isImportant);
                       const bHasImportant = b.isImportant || filteredTasks.some(t => t.storyId === b.id && t.isImportant);
                       return Number(bHasImportant) - Number(aHasImportant);
@@ -1590,7 +1591,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                           className="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:border-rose-500 outline-none bg-white"
                         >
                           <option value="">-- General Task --</option>
-                          {currentThemeStories.map(s => (
+                          {availableStories.map(s => (
                             <option key={s.id} value={s.id}>{s.title}</option>
                           ))}
                         </select>
