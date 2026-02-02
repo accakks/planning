@@ -220,7 +220,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         setTasks(updatedTasks);
         await saveTasks(user.email, updatedTasks);
       } else {
-        setTasks(loadedTasks);
+        setTasks(loadedTasks.filter(t => !t.lnoType));
       }
 
       setThemes(loadedThemes);

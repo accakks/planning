@@ -2,6 +2,13 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
+import { initSupabase } from '@shared/services/supabase';
+
+// Initialize Supabase for web
+initSupabase(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

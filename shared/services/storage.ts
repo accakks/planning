@@ -62,6 +62,7 @@ export const getTasks = async (email?: string): Promise<Task[]> => {
     completed: t.completed,
     isAiGenerated: t.is_ai_generated,
     isImportant: t.is_important,
+    lnoType: t.lno_type,
     remainingMinutes: t.remaining_minutes,
     subtasks: t.subtasks || []
   }));
@@ -89,6 +90,7 @@ export const saveTasks = async (email: string, tasks: Task[]): Promise<boolean> 
     completed: t.completed,
     is_ai_generated: t.isAiGenerated,
     is_important: t.isImportant || false,
+    lno_type: t.lnoType || null,
     remaining_minutes: t.remainingMinutes,
     subtasks: t.subtasks || []
   }));

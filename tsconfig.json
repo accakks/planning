@@ -11,7 +11,8 @@
     ],
     "skipLibCheck": true,
     "types": [
-      "node"
+      "node",
+      "vite/client"
     ],
     "moduleResolution": "bundler",
     "isolatedModules": true,
@@ -20,10 +21,17 @@
     "jsx": "react-jsx",
     "paths": {
       "@/*": [
-        "./*"
+        "./web/*"
+      ],
+      "@shared/*": [
+        "./shared/*"
       ]
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": [
+    "web",
+    "shared"
+  ]
 }
